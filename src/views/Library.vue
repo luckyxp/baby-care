@@ -12,7 +12,7 @@ import { EDU_CATEGORIES, EDU_KEYS } from '@/shared/constants'
 import type { EduCategory, Slot } from '@/shared/types'
 import {
   EDU_ACTIVITIES, INTERACTIONS, FOODS, RECIPES, FEEDING_PRINCIPLES,
-  eduFor, interactionsFor, recipesFor, stageOf, type FoodGroup,
+  careGuidesFor, eduFor, interactionsFor, recipesFor, stageOf, type CareGuide, type FoodGroup,
 } from '@/library'
 import { useSession } from '@/stores/session'
 import { useDay } from '@/composables/useDay'
@@ -32,7 +32,7 @@ const { today } = useClock()
 const { busy, run } = useAction()
 
 const tab = ref(route.query.tab === 'feeding' ? 'feeding' : route.query.slot === 'evening' ? 'interaction' : 'edu')
-const allAges = ref(false)
+const allAges = ref(true)
 const search = ref('')
 const category = ref<EduCategory | 'all'>('all')
 const interactionSlot = ref<Slot | 'all'>(route.query.slot === 'evening' ? 'evening' : 'all')
@@ -63,6 +63,13 @@ const interactionItems = computed(() => (allAges.value ? INTERACTIONS : interact
   .filter((a) => (interactionSlot.value === 'all' || a.slot === interactionSlot.value) && matches(`${a.title} ${a.goal}`)))
 const recipes = computed(() => (allAges.value ? RECIPES : recipesFor(age.value.monthsFloat))
   .filter((r) => matches(`${r.name} ${r.ingredients.join(' ')}`)))
+const careGuides = computed(() => careGuidesFor(age.value.monthsFloat)
+  .filter((guide) => matches(`${guide.title} ${guide.summary} ${guide.points.join(' ')}`)))
+const openGuide = ref('')
+
+const GUIDE_CATEGORY: Record<CareGuide['category'], string> = {
+  sleep: '睡眠', care: '日常护理', feeding: '喂养', safety: '安全',
+}
 
 const GROUP_LABEL: Record<FoodGroup, string> = {
   grain: '谷薯类', veg: '蔬菜类', fruit: '水果及其他', meat: '畜禽肉类',
@@ -173,6 +180,18 @@ async function pick(item: LibraryPick) {
           />
           <van-empty v-if="!recipes.length" image-size="80" :description="age.monthsFloat < 6 && !allAges ? '当前月龄以奶为主，满6月龄后再逐步添加辅食' : '没有匹配的食谱'" />
         </van-tab>
+        <van-tab name="care" title="护理知识">
+          <p class="count muted">{{ careGuides.length }} 条与当前月龄匹配的日常照护要点</p>
+          <article v-for="guide in careGuides" :key="guide.id" class="card guide">
+            <button type="button" class="section-toggle" :aria-expanded="openGuide === guide.id" @click="openGuide = openGuide === guide.id ? '' : guide.id">
+              <span><small class="guide-category">{{ GUIDE_CATEGORY[guide.category] }}</small><strong>{{ guide.title }}</strong></span>
+              <van-icon :name="openGuide === guide.id ? 'arrow-up' : 'arrow-down'" />
+            </button>
+            <p>{{ guide.summary }}</p>
+            <ul v-if="openGuide === guide.id" class="guide-points"><li v-for="point in guide.points" :key="point">{{ point }}</li></ul>
+          </article>
+          <van-empty v-if="!careGuides.length" image-size="80" description="没有匹配的护理知识" />
+        </van-tab>
       </van-tabs>
       <p class="disclaimer">素材供日常照护参考，不是医学诊断或必须达标的清单。尊重宝宝状态，活动全程有人照看，喂养及发育疑问请咨询儿保医生。</p>
     </main>
@@ -272,6 +291,35 @@ h4 {
   font-size: 13px;
   border-left: 2px solid var(--bc-primary);
   color: var(--bc-text-2);
+}
+.guide {
+  margin-top: 12px;
+}
+.guide .section-toggle span {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.guide-category {
+  display: inline-flex;
+  color: var(--bc-primary-dark);
+  background: var(--bc-primary-soft);
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-weight: 500;
+}
+.guide p {
+  margin: 10px 0 0;
+  color: var(--bc-text-2);
+  font-size: 13px;
+  line-height: 1.7;
+}
+.guide-points {
+  margin: 10px 0 0;
+  padding-left: 20px;
+  color: var(--bc-text-2);
+  font-size: 13px;
+  line-height: 1.8;
 }
 .disclaimer {
   margin: 24px 0;

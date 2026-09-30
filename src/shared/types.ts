@@ -217,6 +217,27 @@ export interface PlanTask extends BaseEntity {
   order: number
 }
 
+/** 周模板中的一条安排；weekday 采用 0=周日至6=周六。 */
+export interface TemplateTask {
+  weekday: number
+  kind: TaskKind
+  category: FeedKind | EduCategory | null
+  slot: Slot
+  time: string | null
+  title: string
+  desc: string
+  steps: string[]
+  sourceId: string | null
+  amount: number | null
+  order: number
+}
+
+export interface PlanTemplate extends BaseEntity {
+  babyId: ID
+  name: string
+  tasks: TemplateTask[]
+}
+
 /** 4 很棒 · 3 不错 · 2 一般 · 1 不配合 */
 export type Rating = 1 | 2 | 3 | 4
 
@@ -279,13 +300,14 @@ export interface EntityMap {
   checkins: Checkin
   reports: Report
   notices: Notice
+  templates: PlanTemplate
 }
 
 export type EntityName = keyof EntityMap
 export type AnyEntity = EntityMap[EntityName]
 
 export const ENTITY_NAMES: readonly EntityName[] = [
-  'members', 'invites', 'babies', 'logs', 'notes', 'plans', 'tasks', 'checkins', 'reports', 'notices',
+  'members', 'invites', 'babies', 'logs', 'notes', 'plans', 'tasks', 'checkins', 'reports', 'notices', 'templates',
 ] as const
 
 /* ── 同步协议 ───────────────────────────────────────────────────────────── */

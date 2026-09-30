@@ -58,6 +58,7 @@ export class CloudDB extends Dexie {
       reports: ENTITY_INDEX,
       notices: ENTITY_INDEX,
     })
+    this.version(2).stores({ templates: ENTITY_INDEX })
   }
 
   entity<K extends EntityName>(name: K): Table<EntityMap[K], string> {

@@ -16,9 +16,9 @@ import { EDU_KEYS } from '@/shared/constants'
 import type {
   Baby, CareLog, DateKey, EduCategory, FeedKind, LogType, Plan, PlanTask, ScheduleSlot, Slot,
 } from '@/shared/types'
-import { eduFor, findLibraryItem, interactionsFor, stageOf, type EduActivity, type Interaction } from '@/library'
+import { eduFor, findLibraryItem, interactionsFor, recipesFor, stageOf, type EduActivity, type Interaction, type Recipe } from '@/library'
 import type { Draft } from '@/db/repo'
-import { ageOf, atTime } from '@/utils/time'
+import { ageOf, atTime, dayjs } from '@/utils/time'
 
 export const planIdOf = (babyId: string, date: DateKey) => `plan:${babyId}:${date}`
 const autoId = (babyId: string, date: DateKey, key: string) => `task:${babyId}:${date}:${key}`
@@ -51,10 +51,10 @@ function rotate<T>(list: T[], seed: number, count: number): T[] {
 
 /* ── 任务构造 ───────────────────────────────────────────────────────────── */
 
-export function feedingTask(baby: Baby, date: DateKey, slot: ScheduleSlot, order: number, id?: string): Draft<PlanTask> {
+export function feedingTask(baby: Baby, date: DateKey, slot: ScheduleSlot, order: number, id?: string, recipe?: Recipe): Draft<PlanTask> {
   return {
     id, babyId: baby.id, date, kind: 'feeding', category: slot.kind, slot: slotOfTime(slot.time), assignee: 'nanny',
-    time: slot.time, title: slot.title, desc: '', steps: [], sourceId: null, amount: slot.amount, order,
+    time: slot.time, title: recipe?.name ?? slot.title, desc: recipe?.tip ?? '', steps: recipe?.steps ?? [], sourceId: recipe?.id ?? null, amount: slot.amount, order,
   }
 }
 
@@ -80,12 +80,16 @@ export function activityTask(
 export function recommendPlan(baby: Baby, date: DateKey, variant = 0): PlanBundle {
   const age = ageOf(baby.birthday, date)
   const stage = stageOf(age.monthsFloat)
-  const seed = age.totalDays + variant * 3
+  const seed = planSeed(age.totalDays, date, variant)
   const id = (key: string) => (variant === 0 ? autoId(baby.id, date, key) : undefined)
   const tasks: Draft<PlanTask>[] = []
 
   const schedule = baby.schedule ?? stage.schedule
-  schedule.forEach((slot, i) => tasks.push(feedingTask(baby, date, slot, i, id(`feed${i}`))))
+  let solidIndex = 0
+  schedule.forEach((slot, i) => {
+    const recipe = slot.kind === 'solid' ? recipeForSlot(recipesFor(age.monthsFloat), slot, seed, solidIndex++) : undefined
+    tasks.push(feedingTask(baby, date, slot, i, id(`feed${i}`), recipe))
+  })
 
   EDU_KEYS.forEach((cat, ci) => {
     rotate(eduFor(age.monthsFloat, cat), seed, EDU_PER_CATEGORY).forEach((item, i) =>
@@ -103,6 +107,29 @@ export function recommendPlan(baby: Baby, date: DateKey, variant = 0): PlanBundl
     plan: { id: planIdOf(baby.id, date), babyId: baby.id, date, stageKey: stage.key, focus: stage.focus },
     tasks,
   }
+}
+
+function recipeForSlot(pool: Recipe[], slot: ScheduleSlot, seed: number, index: number): Recipe | undefined {
+  const snack = /点心|加餐/.test(slot.title)
+  const candidates = pool.filter((recipe) => recipe.meal === (snack ? 'snack' : 'main'))
+  return rotate(candidates.length ? candidates : pool, seed + index * 7, 1)[0]
+}
+
+/**
+ * 周一至周五按周模板选题：同一周内每天对应不同素材，下周再向后轮换一组。
+ * 周末保留日期轮换，让家庭可以把它作为较轻松的自由活动日。
+ */
+function planSeed(totalDays: number, date: DateKey, variant: number): number {
+  if (variant) {
+    return totalDays + variant * 3
+  }
+  const weekday = dayjs(date).day()
+  if (weekday === 0 || weekday === 6) {
+    return totalDays
+  }
+  const monday = dayjs(date).subtract(weekday - 1, 'day')
+  const week = Math.floor(monday.diff('2000-01-03', 'day') / 7)
+  return week * 5 + weekday - 1
 }
 
 /** "换一个"：同领域 / 同时段里挑一个当前计划中没有的活动 */

@@ -60,6 +60,7 @@ export const POLICY: { [K in EntityName]: Rule<EntityMap[K]> } = {
   },
   reports: ({ actor }) => isAdmin(actor),
   notices: ({ actor, op, prev }) => op === 'update' && prev?.recipientId === actor.userId,
+  templates: ({ actor }) => isAdmin(actor),
 }
 
 /**

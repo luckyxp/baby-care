@@ -14,16 +14,18 @@ import { useRoute, useRouter } from 'vue-router'
 import { showConfirmDialog } from 'vant'
 import { EDU_KEYS } from '@/shared/constants'
 import { can } from '@/shared/policy'
-import type { CareLog, Checkin, DateKey, EduCategory, PlanTask, Slot, TaskKind } from '@/shared/types'
+import type { CareLog, Checkin, DateKey, EduCategory, PlanTask, PlanTemplate, Slot, TaskKind, TemplateTask } from '@/shared/types'
 import { stageOf } from '@/library'
 import { matchFeeding } from '@/domain/planner'
 import { useSession } from '@/stores/session'
 import { useAction } from '@/composables/useAction'
 import { useClock } from '@/composables/useClock'
 import { useDay } from '@/composables/useDay'
+import { useLive } from '@/db/live'
+import { db } from '@/db/client'
 import type { LogInput } from '@/services/logs'
 import {
-  ensurePlan, feedingPreset, regenerate, removeTask, resetFeeding, saveAsDefaultSchedule, swapTask, undoCheckin,
+  applyTemplate, clearLegacyAutoTasks, ensurePlan, feedingPreset, removeTask, saveWeeklyTemplate, swapTask, undoCheckin,
 } from '@/services/plan'
 import { ageOf, ageText, dayjs, shiftDate } from '@/utils/time'
 import DateBar from '@/components/DateBar.vue'
@@ -40,7 +42,7 @@ const route = useRoute()
 const router = useRouter()
 const session = useSession()
 const { today } = useClock()
-const { run } = useAction()
+const { busy, run } = useAction()
 
 /* ── 日期与数据 ─────────────────────────────────────────────────────────── */
 
@@ -67,6 +69,7 @@ watch(date, (d) => {
 
 const day = useDay(date)
 const baby = computed(() => session.baby)
+const templates = useLive(async () => (await db().templates.toArray()).filter((template) => template.babyId === baby.value?.id && !template.deleted), [] as PlanTemplate[])
 const age = computed(() => (baby.value ? ageOf(baby.value.birthday, date.value) : null))
 const stage = computed(() => stageOf(age.value?.monthsFloat ?? 0))
 const locked = computed(() => date.value > today.value)
@@ -76,7 +79,9 @@ watch(
   [() => baby.value?.id, date, () => session.isAdmin],
   () => {
     if (baby.value && session.isAdmin) {
-      ensurePlan(baby.value, date.value).catch((e) => console.error('[ensurePlan]', e))
+      ensurePlan(baby.value, date.value)
+        .then(() => clearLegacyAutoTasks(baby.value!, date.value))
+        .catch((e) => console.error('[ensurePlan]', e))
     }
   },
   { immediate: true },
@@ -166,6 +171,16 @@ const editTask = ref<PlanTask | null>(null)
 const editDefaults = ref<{ kind: TaskKind; slot: Slot }>({ kind: 'edu', slot: 'day' })
 
 const moreShow = ref(false)
+const templateShow = ref(false)
+const templateEditor = ref(false)
+const templateId = ref<string | undefined>()
+const templateName = ref('')
+const templateTasks = ref<TemplateTask[]>([])
+const templateTask = ref<TemplateTask>({ weekday: 1, kind: 'feeding', category: 'milk', slot: 'day', time: '07:00', title: '', desc: '', steps: [], sourceId: null, amount: 180, order: 1 })
+const WEEKDAYS = [
+  { value: 1, label: '周一' }, { value: 2, label: '周二' }, { value: 3, label: '周三' }, { value: 4, label: '周四' },
+  { value: 5, label: '周五' }, { value: 6, label: '周六' }, { value: 0, label: '周日' },
+]
 
 function record(t: PlanTask) {
   logEdit.value = null
@@ -223,10 +238,45 @@ function toLibrary(slot: Slot) {
 }
 
 const MORE_ACTIONS = [
-  { name: '换一批早教与亲子', subname: '保留已打卡的任务', key: 'regen' },
-  { name: '保存喂养作息为默认', subname: '以后每天按当前时点生成', key: 'save' },
-  { name: '恢复默认喂养作息', subname: '重建当天未完成的喂养任务', key: 'reset' },
+  { name: '应用内置月龄模板', subname: '覆盖当天已有安排', key: 'builtin' },
+  { name: '应用或制作周模板', subname: '配置周几吃什么、做什么', key: 'template' },
 ]
+
+async function applySelected(template?: PlanTemplate) {
+  const b = baby.value
+  if (!b) return
+  const ok = await showConfirmDialog({ title: '应用模板', message: '会覆盖当天已有安排和打卡记录，确定应用吗？', confirmButtonText: '覆盖并应用' }).then(() => true).catch(() => false)
+  if (ok) await run(() => applyTemplate(b, date.value, template), '模板已应用')
+  templateShow.value = false
+}
+
+function openTemplateEditor(template?: PlanTemplate) {
+  templateId.value = template?.id
+  templateName.value = template?.name ?? ''
+  templateTasks.value = template ? template.tasks.map((task) => ({ ...task, steps: [...task.steps] })) : []
+  templateTask.value = { weekday: 1, kind: 'feeding', category: 'milk', slot: 'day', time: '07:00', title: '', desc: '', steps: [], sourceId: null, amount: 180, order: 1 }
+  templateEditor.value = true
+}
+
+function addTemplateTask() {
+  const task = templateTask.value
+  if (!task.title.trim() || !task.category) return
+  const order = templateTasks.value.filter((item) => item.weekday === task.weekday).reduce((max, item) => Math.max(max, item.order), 0) + 1
+  templateTasks.value = [...templateTasks.value, { ...task, title: task.title.trim(), steps: [...task.steps], order }]
+  templateTask.value = { ...task, title: '', desc: '', steps: [], sourceId: null, order: order + 1 }
+}
+
+function setTemplateKind(kind: TaskKind) {
+  const feeding = kind === 'feeding'
+  templateTask.value = { ...templateTask.value, kind, category: feeding ? 'milk' : 'gross', time: feeding ? (templateTask.value.time ?? '07:00') : null, amount: feeding ? (templateTask.value.amount ?? 180) : null }
+}
+
+async function saveTemplate() {
+  const b = baby.value
+  if (!b) return
+  const saved = await run(() => saveWeeklyTemplate(b, templateName.value, templateTasks.value, templateId.value), '周期模板已保存')
+  if (saved !== undefined) templateEditor.value = false
+}
 
 async function onMore(action: { key: string }) {
   moreShow.value = false
@@ -234,17 +284,8 @@ async function onMore(action: { key: string }) {
   if (!b) {
     return
   }
-  if (action.key === 'regen') {
-    await run(() => regenerate(b, date.value), '已换一批')
-  } else if (action.key === 'save') {
-    await run(() => saveAsDefaultSchedule(b, day.tasks.value), '已保存为默认作息')
-  } else if (action.key === 'reset') {
-    const confirmed = await showConfirmDialog({ title: '恢复默认作息', message: '未完成的喂养任务会按默认作息重新生成，确定吗？' }).then(() => true).catch(() => false)
-    if (!confirmed) {
-      return
-    }
-    await run(() => resetFeeding(b, date.value), '已恢复')
-  }
+  if (action.key === 'builtin') await applySelected()
+  else if (action.key === 'template') templateShow.value = true
 }
 </script>
 
@@ -359,6 +400,47 @@ async function onMore(action: { key: string }) {
     <CheckinSheet v-model:show="ckShow" :task="ckTask" />
     <TaskEditSheet v-if="baby" v-model:show="editShow" :task="editTask" :baby="baby" :date="date" :defaults="editDefaults" />
     <van-action-sheet v-model:show="moreShow" :actions="MORE_ACTIONS" cancel-text="取消" teleport="body" @select="onMore" />
+    <van-popup v-model:show="templateShow" position="bottom" round teleport="body">
+      <div class="sheet">
+        <template v-if="!templateEditor">
+          <div class="sheet-head"><h2 class="sheet-title">周期模板</h2></div>
+          <p class="muted">模板覆盖周一至周日。应用后会替换当前所在周的全部安排。</p>
+          <van-button block type="primary" @click="applySelected()">应用内置月龄周模板</van-button>
+          <div class="form-label">自定义周期模板</div>
+          <van-cell v-for="template in templates" :key="template.id" :title="template.name" :label="`覆盖 ${new Set(template.tasks.map((task) => task.weekday)).size} 天 · ${template.tasks.length} 项安排`" is-link @click="openTemplateEditor(template)">
+            <template #right-icon><button type="button" class="link" @click.stop="applySelected(template)">应用</button></template>
+          </van-cell>
+          <van-empty v-if="!templates.length" image-size="64" description="还没有自定义周期模板" />
+          <van-button block plain type="primary" @click="openTemplateEditor()">新建周期模板</van-button>
+        </template>
+        <template v-else>
+          <div class="sheet-head"><button type="button" class="link" @click="templateEditor = false">返回</button><h2 class="sheet-title">编辑周期模板</h2></div>
+          <van-field v-model="templateName" label="模板名称" placeholder="如 工作日照护" />
+          <div class="template-form">
+            <div class="form-label">安排到</div>
+            <select v-model.number="templateTask.weekday"><option v-for="weekday in WEEKDAYS" :key="weekday.value" :value="weekday.value">{{ weekday.label }}</option></select>
+            <div class="form-label">类型</div>
+            <select :value="templateTask.kind" @change="setTemplateKind(($event.target as HTMLSelectElement).value as TaskKind)"><option value="feeding">喂养</option><option value="edu">早教</option><option value="interaction">亲子互动</option></select>
+            <div class="form-label">类别</div>
+            <select v-model="templateTask.category"><option v-if="templateTask.kind === 'feeding'" value="milk">喂奶</option><option v-if="templateTask.kind === 'feeding'" value="solid">辅食</option><option v-if="templateTask.kind === 'feeding'" value="supplement">补剂</option><option v-if="templateTask.kind === 'feeding'" value="water">喝水</option><option v-for="category in EDU_KEYS" v-else :key="category" :value="category">{{ category }}</option></select>
+            <div class="form-label">名称</div>
+            <van-field v-model="templateTask.title" placeholder="如 午餐辅食、亲子共读" />
+            <div class="form-label">时间</div>
+            <input v-model="templateTask.time" type="time" class="template-input" />
+            <div class="form-label">说明（选填）</div>
+            <van-field v-model="templateTask.desc" type="textarea" rows="2" placeholder="执行提示或目标" />
+            <van-button block plain type="primary" @click="addTemplateTask">加入周期模板</van-button>
+          </div>
+          <div class="template-list">
+            <div v-for="weekday in WEEKDAYS" :key="weekday.value" class="template-day">
+              <strong>{{ weekday.label }}</strong><span class="muted">{{ templateTasks.filter((task) => task.weekday === weekday.value).length }} 项</span>
+              <div v-for="(task, index) in templateTasks.filter((item) => item.weekday === weekday.value)" :key="`${weekday.value}-${task.order}-${index}`" class="template-task"><span>{{ task.time || '全天' }} · {{ task.title }}</span><button type="button" class="link danger" @click="templateTasks = templateTasks.filter((item) => item !== task)">删除</button></div>
+            </div>
+          </div>
+          <van-button block type="primary" :loading="busy" @click="saveTemplate">保存完整周期模板</van-button>
+        </template>
+      </div>
+    </van-popup>
   </div>
 </template>
 
@@ -449,4 +531,17 @@ async function onMore(action: { key: string }) {
   border-color: #bdb5ee;
   color: #e4dfff;
 }
+.template-form select,
+.template-input {
+  width: 100%;
+  height: 40px;
+  padding: 0 var(--sp-3);
+  border: 1px solid var(--bc-border);
+  border-radius: var(--bc-radius-sm);
+  background: var(--bc-surface);
+}
+.template-list { margin: var(--sp-4) 0; }
+.template-day { padding: 10px 0; border-bottom: 1px solid var(--bc-border); }
+.template-day > .muted { margin-left: 8px; font-size: 12px; }
+.template-task { display: flex; justify-content: space-between; gap: 12px; margin-top: 7px; color: var(--bc-text-2); font-size: 13px; }
 </style>

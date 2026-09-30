@@ -38,7 +38,7 @@ export const CLOUD_CHANNEL = 'bc-cloud'
 
 const INVITE_TTL = 7 * 24 * 3600 * 1000
 const PROTECTED = new Set(['id', 'familyId', 'createdBy', 'createdAt', 'updatedBy', 'updatedAt', 'deleted', 'seq'])
-const BABY_SCOPED = new Set<EntityName>(['logs', 'notes', 'plans', 'tasks', 'checkins', 'reports'])
+const BABY_SCOPED = new Set<EntityName>(['logs', 'notes', 'plans', 'tasks', 'checkins', 'reports', 'templates'])
 
 interface Ctx {
   user: UserRow

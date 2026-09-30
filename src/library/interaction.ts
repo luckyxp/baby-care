@@ -9,6 +9,7 @@
  * ========================================================================== */
 
 import type { Interaction } from './types'
+import { EXTRA_INTERACTIONS } from './expanded'
 
 /* ── 晚间 · 留给爸爸妈妈 ────────────────────────────────────────────────── */
 
@@ -239,4 +240,4 @@ const DAY: Interaction[] = [
 
 /* ── 汇总 ───────────────────────────────────────────────────────────────── */
 
-export const INTERACTIONS: Interaction[] = [...EVENING, ...DAY]
+export const INTERACTIONS: Interaction[] = [...EVENING, ...DAY, ...EXTRA_INTERACTIONS]

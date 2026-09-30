@@ -12,18 +12,18 @@
 import { EDU_KEYS, MEDICINE_PRESETS } from '@/shared/constants'
 import { ApiError } from '@/shared/errors'
 import type {
-  Baby, Checkin, DateKey, EduCategory, FeedKind, PlanTask, Rating, Slot, TaskKind,
+  Baby, Checkin, DateKey, EduCategory, FeedKind, PlanTask, PlanTemplate, Rating, Slot, TaskKind,
 } from '@/shared/types'
-import { stageOf, type EduActivity, type Interaction, type Recipe } from '@/library'
+import { type EduActivity, type Interaction, type Recipe } from '@/library'
 import {
-  FEED_LOG_TYPE, activityTask, feedingTask, matchFeeding, planIdOf, recommendPlan, scheduleFromTasks, slotOfTime,
+  FEED_LOG_TYPE, activityTask, matchFeeding, planIdOf, recommendPlan, scheduleFromTasks, slotOfTime,
   swapCandidate,
 } from '@/domain/planner'
 import { db } from '@/db/client'
 import { useSession } from '@/stores/session'
 import { create, createMany, remove, removeMany, update, type Draft, type Patch } from '@/db/repo'
 import type { LogInput } from './logs'
-import { ageOf, atTime, todayKey } from '@/utils/time'
+import { atTime, dayjs, todayKey } from '@/utils/time'
 
 export type LibraryPick = EduActivity | Interaction | Recipe
 
@@ -60,10 +60,114 @@ export function ensurePlan(baby: Baby, date: DateKey): Promise<void> {
     }
     const bundle = recommendPlan(baby, date)
     await createMany('plans', [bundle.plan])
-    await createMany('tasks', bundle.tasks)
   }).finally(() => inflight.delete(key))
   inflight.set(key, job)
   return job
+}
+
+/** 版本升级时移除旧版自动填充内容，手工任务保持不变。 */
+export async function clearLegacyAutoTasks(baby: Baby, date: DateKey): Promise<void> {
+  const tasks = await tasksOf(baby.id, date)
+  const stale = tasks.filter((task) => task.id.startsWith(`task:${baby.id}:${date}:`))
+  if (!stale.length) return
+  const checkins = await checkinsOf(baby.id, date)
+  await removeMany('checkins', checkins.filter((checkin) => stale.some((task) => task.id === checkin.taskId)).map((checkin) => checkin.id))
+  await removeMany('tasks', stale.map((task) => task.id))
+}
+
+/** 应用模板会替换选中日期所在周的全部安排，由界面在调用前明确确认。 */
+export async function applyTemplate(baby: Baby, date: DateKey, template?: PlanTemplate): Promise<void> {
+  const monday = dayjs(date).subtract((dayjs(date).day() + 6) % 7, 'day')
+  for (let weekday = 1; weekday <= 7; weekday++) {
+    const target = monday.add(weekday - 1, 'day').format('YYYY-MM-DD')
+    const d = db()
+    await d.transaction('rw', [d.plans, d.tasks, d.checkins, d.outbox], async () => {
+    const [tasks, checkins] = await Promise.all([tasksOf(baby.id, target), checkinsOf(baby.id, target)])
+    await removeMany('checkins', checkins.map((checkin) => checkin.id))
+    await removeMany('tasks', tasks.map((task) => task.id))
+    const bundle = recommendPlan(baby, target)
+    const planId = planIdOf(baby.id, target)
+    if (await d.plans.get(planId)) {
+      await update('plans', { id: planId, stageKey: bundle.plan.stageKey, focus: bundle.plan.focus })
+    } else {
+      await createMany('plans', [bundle.plan])
+    }
+    const drafts = template
+      ? template.tasks.filter((task) => task.weekday === dayjs(target).day()).map((task) => ({
+        babyId: baby.id, date: target, kind: task.kind, category: task.category, slot: task.slot,
+        assignee: task.slot === 'evening' ? 'parent' as const : 'nanny' as const,
+        time: task.time, title: task.title, desc: task.desc, steps: task.steps, sourceId: task.sourceId, amount: task.amount, order: task.order,
+      }))
+      : bundle.tasks.map(({ id: _id, ...task }) => task)
+    if (drafts.length) {
+      await createMany('tasks', drafts)
+    }
+    })
+  }
+}
+
+/** 保存完整周期模板；每条安排须明确属于周一至周日中的一天。 */
+export async function saveWeeklyTemplate(baby: Baby, name: string, tasks: PlanTemplate['tasks'], id?: string): Promise<void> {
+  const title = name.trim()
+  if (!title) throw new ApiError('INVALID', '请填写模板名称')
+  if (!tasks.length) throw new ApiError('INVALID', '请至少添加一条周期安排')
+  if (tasks.some((task) => task.weekday < 0 || task.weekday > 6 || !task.title.trim())) throw new ApiError('INVALID', '模板安排不完整')
+  if (id) {
+    await update('templates', { id, name: title, tasks })
+  } else {
+    await create('templates', { babyId: baby.id, name: title, tasks })
+  }
+}
+
+/**
+ * 宝宝生日调整后，同步今天及未来的系统默认任务。
+ * 已打卡任务、手工新增任务和育儿嫂保存的自定义作息均保持原样。
+ */
+export async function refreshUpcomingPlans(baby: Baby): Promise<number> {
+  const today = todayKey()
+  const d = db()
+  const plans = await d.plans.toArray()
+  const targets = plans.filter((plan) => plan.babyId === baby.id && plan.date >= today)
+
+  for (const plan of targets) {
+    await d.transaction('rw', [d.plans, d.tasks, d.checkins, d.outbox], async () => {
+      const [tasks, checkins] = await Promise.all([tasksOf(baby.id, plan.date), checkinsOf(baby.id, plan.date)])
+      const completed = new Set(checkins.map((checkin) => checkin.taskId))
+      const systemId = (id: string) => id.startsWith(`task:${baby.id}:${plan.date}:`)
+      const stale = tasks.filter((task) => systemId(task.id) && !completed.has(task.id))
+      const keptIds = new Set(tasks.filter((task) => completed.has(task.id)).map((task) => task.id))
+      const bundle = recommendPlan(baby, plan.date)
+      const fresh = bundle.tasks.filter((task) => !keptIds.has(task.id!))
+
+      await removeMany('tasks', stale.map((task) => task.id))
+      await update('plans', { id: plan.id, stageKey: bundle.plan.stageKey, focus: bundle.plan.focus })
+      if (fresh.length) {
+        await createMany('tasks', fresh)
+      }
+    })
+  }
+  return targets.length
+}
+
+/** 切换日期时为默认作息补齐当天辅食菜单；不改自定义作息和已经记录的餐次。 */
+export async function refreshDefaultMeals(baby: Baby, date: DateKey): Promise<void> {
+  if (baby.schedule || date < todayKey()) {
+    return
+  }
+  const tasks = await tasksOf(baby.id, date)
+  const expected = recommendPlan(baby, date).tasks.filter((task) => task.kind === 'feeding' && task.category === 'solid')
+  const logs = await db().logs.where('[babyId+date]').equals([baby.id, date]).toArray()
+  const matched = matchFeeding(tasks, logs)
+
+  for (const fresh of expected) {
+    const current = tasks.find((task) => task.id === fresh.id)
+    if (!current || matched.has(current.id) || current.sourceId === fresh.sourceId) {
+      continue
+    }
+    await update('tasks', {
+      id: current.id, title: fresh.title, desc: fresh.desc, steps: fresh.steps, sourceId: fresh.sourceId,
+    })
+  }
 }
 
 /* ── 批量调整 ───────────────────────────────────────────────────────────── */
@@ -114,9 +218,8 @@ export async function resetFeeding(baby: Baby, date: DateKey): Promise<void> {
     const feeding = tasks.filter((t) => t.kind === 'feeding')
     const kept = feeding.filter((t) => matched.has(t.id))
     const keptSlots = new Set(kept.map((t) => `${t.category}:${t.time}`))
-    const schedule = baby.schedule ?? stageOf(ageOf(baby.birthday, date).monthsFloat).schedule
-    const fresh = schedule.filter((s) => !keptSlots.has(`${s.kind}:${s.time}`))
-      .map((s, i) => feedingTask(baby, date, s, i))
+    const fresh = recommendPlan(baby, date).tasks
+      .filter((task) => task.kind === 'feeding' && !keptSlots.has(`${task.category}:${task.time}`))
     await removeMany('tasks', feeding.filter((t) => !matched.has(t.id)).map((t) => t.id))
     if (fresh.length) {
       await createMany('tasks', fresh)

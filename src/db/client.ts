@@ -11,7 +11,7 @@
 import Dexie, { type Table } from 'dexie'
 import { ref } from 'vue'
 import type {
-  Baby, CareLog, Checkin, EntityMap, EntityName, Invite, Member, Mutation, Note, Notice, Plan, PlanTask, Report,
+  Baby, CareLog, Checkin, EntityMap, EntityName, Invite, Member, Mutation, Note, Notice, Plan, PlanTask, PlanTemplate, Report,
 } from '@/shared/types'
 import { ENTITY_NAMES } from '@/shared/types'
 
@@ -35,6 +35,7 @@ export class ClientDB extends Dexie {
   checkins!: Table<Checkin, string>
   reports!: Table<Report, string>
   notices!: Table<Notice, string>
+  templates!: Table<PlanTemplate, string>
   outbox!: Table<OutboxRow, number>
   meta!: Table<MetaRow, string>
 
@@ -54,6 +55,7 @@ export class ClientDB extends Dexie {
       outbox: '++seqNo, mid, [entity+id]',
       meta: 'key',
     })
+    this.version(2).stores({ templates: 'id, babyId' })
   }
 
   entity<K extends EntityName>(name: K): Table<EntityMap[K], string> {

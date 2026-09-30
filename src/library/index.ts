@@ -11,12 +11,14 @@ import { STAGES } from './stages'
 import { EDU_ACTIVITIES } from './edu'
 import { INTERACTIONS } from './interaction'
 import { FOODS, RECIPES } from './feeding'
+import { CARE_GUIDES } from './care'
 
 export type * from './types'
 export * from './stages'
 export * from './edu'
 export * from './interaction'
 export * from './feeding'
+export * from './care'
 
 /* ── 月龄匹配 ───────────────────────────────────────────────────────────── */
 
@@ -49,6 +51,10 @@ export function foodsFor(months: number): Food[] {
 /** 可做的食谱；越贴近当前月龄的越靠前（同月龄保持编排顺序） */
 export function recipesFor(months: number): Recipe[] {
   return RECIPES.filter((r) => r.min <= months).sort((a, b) => b.min - a.min)
+}
+
+export function careGuidesFor(months: number) {
+  return CARE_GUIDES.filter((guide) => inRange(guide, months))
 }
 
 /* ── 条目反查 ───────────────────────────────────────────────────────────── */

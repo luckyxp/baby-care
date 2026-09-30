@@ -9,6 +9,7 @@ import BabyForm from '@/components/family/BabyForm.vue'
 import { FEED_KIND_META } from '@/shared/constants'
 import type { BabyInput } from '@/shared/types'
 import { update } from '@/db/repo'
+import { refreshUpcomingPlans } from '@/services/plan'
 import { useSession } from '@/stores/session'
 import { useAction } from '@/composables/useAction'
 import { useClock } from '@/composables/useClock'
@@ -42,7 +43,15 @@ async function save() {
   if (!session.isAdmin || !session.baby) {
     return
   }
-  await run(() => update('babies', { id: session.baby!.id, ...model.value, name: model.value.name.trim(), allergies: model.value.allergies.trim() }), '宝宝档案已保存')
+  const birthdayChanged = session.baby.birthday !== model.value.birthday
+  await run(async () => {
+    const saved = await update('babies', {
+      id: session.baby!.id, ...model.value, name: model.value.name.trim(), allergies: model.value.allergies.trim(),
+    })
+    if (birthdayChanged) {
+      await refreshUpcomingPlans(saved)
+    }
+  }, birthdayChanged ? '档案已保存，后续计划已按新月龄更新' : '宝宝档案已保存')
 }
 </script>
 
