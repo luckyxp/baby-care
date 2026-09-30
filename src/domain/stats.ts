@@ -77,7 +77,7 @@ export function summarizeDay(date: DateKey, logs: CareLog[], now: number = Date.
     sleepMin: Math.round(sleeps.reduce((s, l) => s + overlapMinutes(l, win, now), 0)),
     napCount: naps.length,
     napMin: Math.round(naps.reduce((s, l) => s + overlapMinutes(l, win, now), 0)),
-    longestSleepMin: Math.round(Math.max(0, ...sleeps.map((l) => ((l.endTime ?? now) - l.time) / MINUTE))),
+    longestSleepMin: Math.round(Math.max(0, ...sleeps.map((l) => overlapMinutes(l, win, now)))),
     tempMax: temps.length ? Math.max(...temps.map((l) => l.data.value)) : null,
     fever: temps.some(isFever),
     medicine: [...new Set(today.filter((l): l is CareLog<'medicine'> => l.type === 'medicine').map((l) => l.data.name))],

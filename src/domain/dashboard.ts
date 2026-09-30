@@ -127,7 +127,8 @@ export function summarizeRange(input: RangeInput): RangeSummary {
     activeDays,
     totals,
     averages,
-    longestSleepMin: Math.max(0, ...perDay.map((d) => d.longestSleepMin)),
+    // 区间内的"最长一觉"按整段睡眠计（跨夜不截断、起点可早于区间首日），与单日卡片的"当日口径"相区别
+    longestSleepMin: Math.max(0, ...input.logs.filter((l) => l.type === 'sleep').map((l) => ((l.endTime ?? now) - l.time) / 60000)),
     foods,
     newFoods: foods.filter((f) => !prior.has(f)),
     edu: summarizeEdu(

@@ -71,7 +71,8 @@ describe('每日计划生成', () => {
   })
 
   it('任务落库失败时计划和队列一并回滚，重试可以成功', async () => {
-    const spy = vi.spyOn(db().tasks, 'put').mockRejectedValueOnce(new Error('模拟写入失败'))
+    // repo.commit 内部通过 db().table(entity) 落库，须 spy 同一路径的 put，才能命中真实写入
+    const spy = vi.spyOn(db().table('tasks'), 'put').mockRejectedValueOnce(new Error('模拟写入失败'))
     await expect(ensurePlan(baby, date)).rejects.toThrow('模拟写入失败')
     expect(await db().plans.count()).toBe(0)
     expect(await db().tasks.count()).toBe(0)
