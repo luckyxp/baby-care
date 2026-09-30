@@ -15,6 +15,7 @@
 
 import Dexie from 'dexie'
 import { SOLID_AMOUNTS } from '@/shared/constants'
+import { ENTITY_NAMES } from '@/shared/types'
 import type {
   Accept, Baby, CareLog, Checkin, DateKey, EduCategory, EntityName, LogDataMap, LogType, Member, Mutation,
   Note, Plan, PlanTask, Rating, Relation, Report, SessionInfo,
@@ -353,7 +354,7 @@ async function seed(server: CloudServer): Promise<void> {
 
 /* ── 重置：仅清理演示家庭，不影响真实用户 ────────────────────────────── */
 
-const ENTITY_TABLES: EntityName[] = ['members', 'invites', 'babies', 'logs', 'notes', 'plans', 'tasks', 'checkins', 'reports', 'notices']
+const ENTITY_TABLES: EntityName[] = [...ENTITY_NAMES]
 
 export async function resetDemo(server: CloudServer = cloud()): Promise<void> {
   const db = server.db

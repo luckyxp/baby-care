@@ -15,6 +15,7 @@ import { requestAlertPermission } from '@/composables/alerts'
 import { network, isOnline, setSimulatedOffline } from '@/sync/network'
 import { engine, syncState } from '@/sync/engine'
 import { isDemoPhone, resetDemo } from '@/cloud/demo'
+import { clearCareData } from '@/services/plan'
 import { ageOf, ageText, ago, dayjs } from '@/utils/time'
 import ChipGroup from '@/components/ChipGroup.vue'
 
@@ -129,6 +130,24 @@ async function reset() {
     engine.start(session.token, session.family.id)
   }
 }
+
+async function clearData() {
+  const baby = session.baby
+  if (!baby) {
+    return
+  }
+  try {
+    await showConfirmDialog({
+      title: '清除护理数据',
+      message: '将删除当前宝宝的护理日志、备注、计划、打卡、汇报和周期模板。宝宝档案、家庭成员和消息会保留；删除后无法恢复。确定继续吗？',
+      confirmButtonText: '清除数据',
+      confirmButtonColor: 'var(--bc-danger)',
+    })
+  } catch {
+    return
+  }
+  await run(() => clearCareData(baby), '护理数据已清除')
+}
 </script>
 
 <template>
@@ -177,6 +196,11 @@ async function reset() {
         <p>在<strong>同一浏览器的同源标签页</strong>登录不同演示账号，可以体验三方共享记录。账号、邀请码与护理数据仅保存在当前浏览器，其他手机、浏览器或无痕窗口不会同步。</p>
         <p>本机角色限制仅用于交互演示，不构成真实身份验证或安全隔离。请勿录入真实敏感信息。清理浏览器存储会删除本机数据。</p>
         <button class="link help-button" type="button" @click="showHelp = true">如何添加到主屏幕？ <van-icon name="arrow" /></button>
+      </section>
+      <div v-if="session.isAdmin" class="section-title">数据管理</div>
+      <section v-if="session.isAdmin" class="card data-card">
+        <div><strong>清除护理数据</strong><p>删除日志、计划、打卡、汇报和周期模板，保留宝宝档案与家庭成员。</p></div>
+        <van-button block plain type="danger" :loading="busy" @click="clearData">清除护理数据</van-button>
       </section>
       <van-button class="logout" block round plain :loading="busy" @click="logout">退出登录</van-button>
       <button v-if="demo" type="button" class="reset" :disabled="busy" @click="reset">重置本机演示数据</button>
@@ -231,6 +255,7 @@ h1 { font-size: 25px; margin: 0; }
 .help-card h3 { font-size: 14px; margin: 0 0 8px; }
 .help-card p { font-size: 12px; line-height: 1.8; color: var(--bc-text-2); }
 .help-button { font-size: 13px; min-height: 44px; }
+.data-card p { margin: 6px 0 14px; color: var(--bc-text-2); font-size: 12px; line-height: 1.7; }
 .logout { margin-top: 22px; }
 .reset { display: block; padding: 12px; margin: 12px auto 0; min-height: 44px; border: 0; background: none; color: var(--bc-danger); font-size: 12px; cursor: pointer; }
 .version { text-align: center; margin: 20px 0 0; color: var(--bc-text-3); font-size: 11px; letter-spacing: 1px; }

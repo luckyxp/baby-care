@@ -119,6 +119,23 @@ export async function saveWeeklyTemplate(baby: Baby, name: string, tasks: PlanTe
   }
 }
 
+/** 清空当前宝宝的护理数据与计划配置，保留档案、家庭成员和消息。 */
+export async function clearCareData(baby: Baby): Promise<void> {
+  const d = db()
+  const [logs, notes, plans, tasks, checkins, reports, templates] = await Promise.all([
+    d.logs.toArray(), d.notes.toArray(), d.plans.toArray(), d.tasks.toArray(), d.checkins.toArray(), d.reports.toArray(), d.templates.toArray(),
+  ])
+  await d.transaction('rw', [d.logs, d.notes, d.plans, d.tasks, d.checkins, d.reports, d.templates, d.outbox], async () => {
+    await removeMany('checkins', checkins.filter((item) => item.babyId === baby.id).map((item) => item.id))
+    await removeMany('tasks', tasks.filter((item) => item.babyId === baby.id).map((item) => item.id))
+    await removeMany('plans', plans.filter((item) => item.babyId === baby.id).map((item) => item.id))
+    await removeMany('reports', reports.filter((item) => item.babyId === baby.id).map((item) => item.id))
+    await removeMany('notes', notes.filter((item) => item.babyId === baby.id).map((item) => item.id))
+    await removeMany('logs', logs.filter((item) => item.babyId === baby.id).map((item) => item.id))
+    await removeMany('templates', templates.filter((item) => item.babyId === baby.id).map((item) => item.id))
+  })
+}
+
 /**
  * 宝宝生日调整后，同步今天及未来的系统默认任务。
  * 已打卡任务、手工新增任务和育儿嫂保存的自定义作息均保持原样。
