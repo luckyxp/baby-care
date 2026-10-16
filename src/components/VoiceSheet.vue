@@ -16,6 +16,8 @@ import { useAction } from '@/composables/useAction'
 import { useVoice } from '@/composables/useVoice'
 import { addLog } from '@/services/logs'
 import { dateKey, dateLabel, hm } from '@/utils/time'
+import AppIcon from './AppIcon.vue'
+import AppSheet from './AppSheet.vue'
 
 const show = defineModel<boolean>('show', { required: true })
 const session = useSession()
@@ -71,16 +73,14 @@ async function saveAll() {
 </script>
 
 <template>
-  <van-popup v-model:show="show" position="bottom" round closeable teleport="body" :style="{ maxWidth: 'var(--bc-max-w)', left: '50%', transform: 'translateX(-50%)' }">
-    <div class="sheet">
-      <div class="sheet-head"><div class="sheet-title">🎙 语音记录</div></div>
-
+  <AppSheet v-model:show="show" title="语音记录" confirm-text="保存" :busy="busy" :disabled="!drafts.length" @confirm="saveAll">
+    <div>
       <textarea
         v-model="voice.text.value"
         class="textarea"
         rows="3"
         maxlength="300"
-        :placeholder="voice.supported ? '点下方按钮开始说话，也可以直接输入' : '当前浏览器不支持语音识别，可用输入法的语音输入（键盘上的🎙）'"
+        :placeholder="voice.supported ? '点下方按钮开始说话，也可以直接输入' : '输入一句护理记录，也可用键盘语音输入'"
       />
       <div v-if="voice.error.value" class="pill pill--danger err">{{ voice.error.value }}</div>
 
@@ -107,22 +107,19 @@ async function saveAll() {
       </template>
 
       <template v-else>
-        <div class="form-label">识别结果（{{ drafts.length }} 条，点 × 移除）</div>
+        <div class="form-label">识别到 {{ drafts.length }} 条记录</div>
         <van-empty v-if="!drafts.length" image-size="64" description="没听懂，换个说法试试，比如「三点喝了120毫升奶」" />
         <div v-for="(p, i) in preview" :key="i" class="draft">
-          <span class="d-icon">{{ LOG_KINDS[p.d.type].icon }}</span>
+          <span class="d-icon"><AppIcon :name="p.d.type" :size="20" /></span>
           <div class="grow">
             <div><strong>{{ LOG_KINDS[p.d.type].label }}</strong> {{ p.text }}</div>
             <div class="muted">{{ dateKey(p.d.time) === dateKey() ? '' : dateLabel(dateKey(p.d.time)) }} {{ hm(p.d.time) }}</div>
           </div>
-          <van-icon name="cross" class="rm" @click="drafts.splice(i, 1)" />
-        </div>
-        <div class="sheet-actions">
-          <van-button round block type="primary" :disabled="!drafts.length" :loading="busy" @click="saveAll">全部保存</van-button>
+          <button type="button" class="icon-button" :aria-label="`移除第${i + 1}条草稿`" @click="drafts.splice(i, 1)"><AppIcon name="close" :size="18" /></button>
         </div>
       </template>
     </div>
-  </van-popup>
+  </AppSheet>
 </template>
 
 <style scoped>
@@ -146,7 +143,7 @@ async function saveAll() {
   border: 0;
   border-radius: 50%;
   background: var(--bc-primary);
-  color: #fff;
+  color: var(--bc-on-primary);
   box-shadow: var(--bc-shadow-lg);
   cursor: pointer;
 }
@@ -157,10 +154,10 @@ async function saveAll() {
 
 @keyframes pulse {
   0% {
-    box-shadow: 0 0 0 0 rgba(255, 126, 103, 0.5);
+    box-shadow: 0 0 0 0 var(--bc-primary-soft);
   }
   100% {
-    box-shadow: 0 0 0 18px rgba(255, 126, 103, 0);
+    box-shadow: 0 0 0 18px transparent;
   }
 }
 
@@ -172,14 +169,11 @@ async function saveAll() {
 .examples {
   display: flex;
   flex-wrap: wrap;
-  gap: var(--sp-2);
+  gap: 0 8px;
 }
 
-.ex {
-  border: 0;
-  cursor: pointer;
-  padding: 6px 10px;
-}
+.ex { position: relative; isolation: isolate; min-height: 44px; border: 0; background: transparent; cursor: pointer; padding: 0 10px; }
+.ex::before { content: ''; position: absolute; z-index: -1; inset: 5px 0; border-radius: 7px; background: var(--bc-surface-2); }
 
 .draft {
   display: flex;
@@ -195,9 +189,5 @@ async function saveAll() {
   font-size: 22px;
 }
 
-.rm {
-  padding: 6px;
-  color: var(--bc-text-3);
-  cursor: pointer;
-}
+
 </style>

@@ -240,7 +240,7 @@ onBeforeRouteLeave(async () => {
             </div>
             <span class="pill" :class="status.cls">{{ status.text }}</span>
           </div>
-          <div v-if="session.isAdmin && changedAfterPublish" class="hint pill pill--warn">发布后有修改，可重新发布提醒爸爸妈妈</div>
+          <div v-if="session.isAdmin && changedAfterPublish" class="hint pill pill--warn">有更新待发布</div>
         </div>
 
         <van-notice-bar
@@ -249,7 +249,7 @@ onBeforeRouteLeave(async () => {
           left-icon="info-o"
           wrapable
           :scrollable="false"
-          text="育儿嫂尚未发布，以下为系统根据记录实时汇总的内容"
+          text="尚未发布，当前内容根据护理记录汇总"
         />
 
         <div v-if="local" class="dirty row row--between">
@@ -257,7 +257,7 @@ onBeforeRouteLeave(async () => {
           <button class="link" type="button" @click="discard">放弃修改</button>
         </div>
 
-        <ReportBlockCard
+        <section v-if="visible.length" class="list-panel report-document"><ReportBlockCard
           v-for="b in visible"
           :key="b.key"
           :block="b"
@@ -267,7 +267,7 @@ onBeforeRouteLeave(async () => {
           @done="editingKey = ''"
           @restore="restore(b.key)"
           @input="(t) => input(b.key, t)"
-        />
+        /></section>
         <van-empty v-if="!visible.length" image-size="80" description="这一天还没有记录" />
 
         <div class="section-title">汇报留言</div>
@@ -285,9 +285,9 @@ onBeforeRouteLeave(async () => {
     <div v-if="baby" class="bar fixed-center">
       <template v-if="session.isAdmin">
         <van-button round plain :loading="busy" @click="save">保存</van-button>
-        <van-button round plain type="primary" icon="description-o" @click="copy">复制</van-button>
+        <van-button round plain icon="description-o" @click="copy">复制</van-button>
         <van-button round type="primary" class="wide" :loading="busy" @click="publish">
-          {{ report?.publishedAt ? '更新并重新发布' : '发布给家长' }}
+          {{ report?.publishedAt ? '更新汇报' : '发布给家长' }}
         </van-button>
       </template>
       <van-button v-else round block type="primary" icon="description-o" @click="copy">一键复制汇报</van-button>
@@ -303,19 +303,24 @@ onBeforeRouteLeave(async () => {
 }
 
 .head {
-  padding-top: calc(var(--sp-3) + env(safe-area-inset-top));
+  padding-top: calc(24px + env(safe-area-inset-top));
   padding-bottom: var(--sp-3);
 }
 
 .page-title {
-  margin: 0 0 var(--sp-2);
+  margin: 0;
   font-size: 22px;
+  font-weight: 600;
+  letter-spacing: -.5px;
 }
 
 .hero .baby {
-  font-size: 17px;
-  font-weight: 700;
+  font-size: 15px;
+  font-weight: 500;
 }
+
+.hero .muted { margin-top: 5px; font-size: 12px; }
+.head > .row { margin-bottom: 12px; }
 
 .hint {
   margin-top: var(--sp-2);

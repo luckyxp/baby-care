@@ -9,6 +9,7 @@ import { libraryOf } from '@/domain/planner'
 import { useAction } from '@/composables/useAction'
 import { checkin } from '@/services/plan'
 import ChipGroup from '@/components/ChipGroup.vue'
+import AppSheet from '@/components/AppSheet.vue'
 
 const props = defineProps<{ task: PlanTask | null }>()
 const show = defineModel<boolean>('show', { required: true })
@@ -47,10 +48,10 @@ async function submit() {
 </script>
 
 <template>
-  <van-popup v-model:show="show" position="bottom" round closeable teleport="body" :style="{ maxWidth: 'var(--bc-max-w)', left: '50%', transform: 'translateX(-50%)' }">
-    <div v-if="task" class="sheet">
-      <div class="sheet-head"><div class="sheet-title">✅ 打卡 · {{ task.title }}</div></div>
-      <p v-if="hint" class="hint">👀 观察要点：{{ hint }}</p>
+  <AppSheet v-model:show="show" title="活动打卡" confirm-text="完成" :busy="busy" @confirm="submit">
+    <div v-if="task">
+      <h3 class="task-name">{{ task.title }}</h3>
+      <p v-if="hint" class="hint">{{ hint }}</p>
 
       <div class="form-label">宝宝表现</div>
       <div class="ratings">
@@ -74,14 +75,12 @@ async function submit() {
         @update:model-value="(v) => (form.duration = Number(v) || null)"
       />
 
-      <div class="sheet-actions">
-        <van-button round block type="primary" :loading="busy" @click="submit">完成打卡</van-button>
-      </div>
     </div>
-  </van-popup>
+  </AppSheet>
 </template>
 
 <style scoped>
+.task-name { margin: 0 0 12px; font-size: 17px; font-weight: 600; }
 .hint {
   margin: 0;
   padding: var(--sp-2) var(--sp-3);
@@ -110,9 +109,9 @@ async function submit() {
 }
 
 .rate.on {
-  border-color: var(--bc-primary);
-  background: var(--bc-primary-soft);
-  color: var(--bc-primary-dark);
+  border-color: var(--bc-text-3);
+  background: var(--bc-surface-2);
+  color: var(--bc-text);
   font-weight: 600;
 }
 

@@ -108,7 +108,7 @@ const groups = computed(() => {
   <div class="page">
     <PageNav />
     <div class="page-body">
-      <p class="muted intro">最近 {{ DAYS }} 天 · 点击查看当天完整汇报</p>
+      <p class="muted intro">最近 {{ DAYS }} 天</p>
       <van-empty v-if="!groups.length" description="还没有任何记录，开始记录后这里会自动生成每日汇报" />
       <template v-for="g in groups" :key="g.month">
         <div class="section-title">{{ g.month }}</div>

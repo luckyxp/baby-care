@@ -139,7 +139,8 @@ const opts = <K extends string>(labels: Record<K, string>) => (Object.keys(label
 
 <style scoped>
 .field {
-  border: 1px solid var(--bc-border);
+  background: var(--bc-surface-2);
+  border: 0;
   border-radius: var(--bc-radius-sm);
 }
 
@@ -159,9 +160,9 @@ const opts = <K extends string>(labels: Record<K, string>) => (Object.keys(label
   width: 100%;
   height: 44px;
   padding: 0 var(--sp-3);
-  border: 1px solid var(--bc-border);
+  border: 0;
   border-radius: var(--bc-radius-sm);
-  background: var(--bc-surface);
+  background: var(--bc-surface-2);
   cursor: pointer;
 }
 

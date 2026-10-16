@@ -72,17 +72,17 @@ function remaining(i: Invite) {
     <PageNav />
     <div class="page-body">
       <div class="family-heading">
-        <div class="family-mark" aria-hidden="true">🏡</div>
-        <div><h1>{{ session.family?.name }}</h1><p class="muted">{{ session.activeMembers.length }} 位成员，一起照顾宝宝</p></div>
+        <div class="family-mark" aria-hidden="true"><van-icon name="home-o" size="25" /></div>
+        <div><h1>{{ session.family?.name }}</h1><p class="muted">{{ session.activeMembers.length }} 位成员</p></div>
       </div>
-      <div class="local-note"><van-icon name="info-o" /> 纯静态本机演示 · 仅同一浏览器的同源标签页可共享</div>
+      <div class="local-note">数据仅在当前浏览器共享</div>
 
       <section class="card">
         <div v-for="m in session.activeMembers" :key="m.id" class="member-row">
           <div class="avatar" :style="{ background: RELATION_COLOR[m.relation] + '18' }">{{ m.avatar || RELATION_AVATAR[m.relation] }}</div>
           <div class="grow">
             <div class="row"><strong>{{ memberLabel(m) }}</strong><span v-if="m.userId === session.user?.id" class="muted">我</span><span class="pill" :class="m.role === 'admin' ? 'pill--primary' : ''">{{ m.role === 'admin' ? '管理员' : '家长' }}</span></div>
-            <div class="details">{{ m.relation === 'nanny' ? '育儿嫂' : m.nickname }} · {{ contact(m) }}</div>
+            <div class="details">{{ m.relation === 'nanny' ? '育儿嫂' : m.nickname }}<template v-if="m.userId === session.user?.id"> · {{ contact(m) }}</template></div>
             <div class="joined">{{ dayjs(m.createdAt).format('YYYY.M.D') }} 加入</div>
           </div>
           <button v-if="session.isAdmin && m.userId !== session.user?.id" type="button" class="remove" :disabled="busy" @click="removeMember(m)">移出</button>
@@ -92,8 +92,8 @@ function remaining(i: Invite) {
 
       <template v-if="session.isAdmin">
         <div class="invite-actions">
-          <van-button round plain type="primary" :loading="busy" @click="invite('father')">👨 邀请爸爸</van-button>
-          <van-button round type="primary" :loading="busy" @click="invite('mother')">👩 邀请妈妈</van-button>
+          <van-button plain type="primary" :loading="busy" @click="invite('father')">邀请爸爸</van-button>
+          <van-button plain type="primary" :loading="busy" @click="invite('mother')">邀请妈妈</van-button>
         </div>
         <div v-if="invites.length" class="section-title">尚未使用的邀请码</div>
         <section v-if="invites.length" class="card">
@@ -106,14 +106,14 @@ function remaining(i: Invite) {
         </section>
       </template>
 
-      <div class="section-title">谁可以做什么</div>
-      <section class="card permissions">
-        <h3>🧑‍🍼 育儿嫂 · 管理员</h3>
+      <details class="card permissions">
+        <summary>角色与权限</summary>
+        <h3>育儿嫂 · 管理员</h3>
         <p>创建与编辑宝宝档案、管理成员、调整计划、编辑护理记录、发布每日汇报。</p>
-        <h3>👨‍👩‍👧 爸爸妈妈 · 家长</h3>
+        <h3>爸爸妈妈 · 家长</h3>
         <p>查看记录和计划、补充备注、完成留给家长的晚间亲子任务。不能修改育儿嫂录入的内容或计划，不能管理成员。</p>
         <p class="muted small">以上是本机交互权限演示，不是真实账号鉴权或服务器侧访问控制。当前不要录入敏感个人信息；真实多端协作与隐私隔离需接入后端。</p>
-      </section>
+      </details>
     </div>
     <InviteSheet v-model:show="showInvite" :invite="selected" />
   </div>
@@ -121,10 +121,10 @@ function remaining(i: Invite) {
 
 <style scoped>
 .family-heading { display: flex; align-items: center; gap: 14px; padding: 22px 4px 16px; }
-.family-mark { width: 54px; height: 54px; display: grid; place-items: center; border-radius: 18px; font-size: 30px; background: var(--bc-primary-soft); }
+.family-mark { width: 44px; height: 44px; display: grid; place-items: center; border-radius: 12px; color: var(--bc-primary); background: var(--bc-primary-soft); }
 h1 { margin: 0; font-size: 21px; }
 .family-heading p { margin: 3px 0 0; font-size: 13px; }
-.local-note { display: flex; align-items: center; gap: 6px; padding: 12px; margin-bottom: 16px; border-radius: 12px; background: var(--bc-warn-soft); font-size: 12px; color: var(--bc-text-2); }
+.local-note { display: flex; align-items: center; gap: 6px; margin-bottom: 16px; font-size: 12px; color: var(--bc-text-2); }
 .member-row { display: flex; align-items: center; gap: 10px; padding: 14px 0; border-bottom: 1px solid var(--bc-border); }
 .member-row:first-child { padding-top: 0; }
 .member-row:last-child { border-bottom: 0; padding-bottom: 0; }
@@ -139,6 +139,7 @@ h1 { margin: 0; font-size: 21px; }
 .invite-entry { border: 0; background: none; text-align: left; padding: 4px 0; cursor: pointer; }
 .invite-entry strong { display: block; letter-spacing: 2px; font-size: 17px; color: var(--bc-primary-dark); }
 .invite-entry span { display: block; color: var(--bc-text-2); font-size: 12px; margin-top: 2px; }
+.permissions summary { min-height: 24px; cursor: pointer; font-size: 14px; margin-bottom: 12px; }
 .permissions h3 { font-size: 14px; margin: 0 0 6px; }
 .permissions p { font-size: 13px; line-height: 1.8; margin: 0 0 16px; color: var(--bc-text-2); }
 .permissions p:last-child { margin-bottom: 0; }

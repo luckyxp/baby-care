@@ -2,15 +2,18 @@
   选项胶囊组：单选 / 多选，一次点击完成输入（适配单手、碎片化操作）
 =========================================================================== -->
 <script setup lang="ts" generic="T extends string | number">
+import AppIcon from './AppIcon.vue'
+
 export interface ChipOption<V> {
   value: V
   label: string
   icon?: string
+  symbol?: string
   color?: string
   hint?: string
 }
 
-const props = withDefaults(defineProps<{ options: ChipOption<T>[]; multiple?: boolean; clearable?: boolean; disabled?: boolean }>(), {
+const props = withDefaults(defineProps<{ options: ChipOption<T>[]; multiple?: boolean; clearable?: boolean; disabled?: boolean; scroll?: boolean; segmented?: boolean }>(), {
   multiple: false,
   clearable: false,
   disabled: false,
@@ -33,7 +36,7 @@ function toggle(v: T) {
 </script>
 
 <template>
-  <div class="chips" role="group">
+  <div class="chips" :class="{ 'chips--scroll': scroll, 'chips--segmented': segmented }" role="group">
     <button
       v-for="o in options"
       :key="String(o.value)"
@@ -45,8 +48,9 @@ function toggle(v: T) {
       @click="toggle(o.value)"
     >
       <span v-if="o.color" class="dot" :style="{ background: o.color }" />
-      <span v-if="o.icon">{{ o.icon }}</span>
-      {{ o.label }}
+      <AppIcon v-if="o.symbol" :name="o.symbol" :size="17" />
+      <span v-else-if="o.icon">{{ o.icon }}</span>
+      <span>{{ o.label }}</span>
       <small v-if="o.hint">{{ o.hint }}</small>
     </button>
     <slot />
@@ -54,47 +58,19 @@ function toggle(v: T) {
 </template>
 
 <style scoped>
-.chips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--sp-2);
-}
-
-.chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  min-height: 36px;
-  padding: 0 14px;
-  border: 1px solid var(--bc-border);
-  border-radius: 999px;
-  background: var(--bc-surface);
-  color: var(--bc-text);
-  cursor: pointer;
-  transition: all 0.15s ease;
-}
-
-.chip small {
-  font-size: 11px;
-  color: var(--bc-danger);
-}
-
-.chip--on {
-  border-color: var(--bc-primary);
-  background: var(--bc-primary-soft);
-  color: var(--bc-primary-dark);
-  font-weight: 600;
-}
-
-.chip:disabled {
-  opacity: 0.6;
-  cursor: default;
-}
-
-.dot {
-  width: 12px;
-  height: 12px;
-  border-radius: 50%;
-  border: 1px solid rgba(0, 0, 0, 0.1);
-}
+.chips { display: flex; flex-wrap: wrap; gap: 0 8px; }
+.chip { position: relative; isolation: isolate; display: inline-flex; align-items: center; justify-content: center; gap: 5px; min-width: 44px; min-height: 44px; padding: 0 13px; border: 0; background: transparent; color: var(--bc-text-2); cursor: pointer; font-size: 13px; white-space: nowrap; }
+.chip::before { content: ''; position: absolute; z-index: -1; inset: 5px 0; border: 1px solid transparent; border-radius: 7px; background: var(--bc-surface-2); transition: background 160ms ease, border-color 160ms ease; }
+.chip--on { color: var(--bc-text); font-weight: 600; }
+.chip--on::before { border-color: var(--bc-text-3); }
+.chip:disabled { opacity: .4; }
+.chip small { font-size: 10px; color: var(--bc-danger); }
+.dot { width: 10px; height: 10px; border-radius: 50%; }
+.chips--scroll { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; margin-inline: -20px; padding-inline: 20px; }
+.chips--scroll::-webkit-scrollbar { display: none; }
+.chips--scroll .chip { flex: none; }
+.chips--segmented { flex-wrap: nowrap; gap: 4px; padding: 0 4px; border-radius: 10px; background: var(--bc-surface-2); }
+.chips--segmented .chip { flex: 1; padding-inline: 8px; }
+.chips--segmented .chip::before { background: transparent; }
+.chips--segmented .chip--on::before { background: var(--bc-surface); border-color: transparent; box-shadow: var(--bc-shadow); }
 </style>

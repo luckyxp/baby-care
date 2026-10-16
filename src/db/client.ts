@@ -35,7 +35,7 @@ export class ClientDB extends Dexie {
   checkins!: Table<Checkin, string>
   reports!: Table<Report, string>
   notices!: Table<Notice, string>
-  templates!: Table<PlanTemplate, string>
+  dailyTemplates!: Table<PlanTemplate, string>
   outbox!: Table<OutboxRow, number>
   meta!: Table<MetaRow, string>
 
@@ -56,6 +56,10 @@ export class ClientDB extends Dexie {
       meta: 'key',
     })
     this.version(2).stores({ templates: 'id, babyId' })
+    this.version(3).stores({ templates: null, dailyTemplates: 'id, babyId' }).upgrade(async (transaction) => {
+      // 移除已废弃的周模板写入队列，避免它们在新模型下再次上传。
+      await transaction.table('outbox').filter((row) => row.entity === 'templates').delete()
+    })
   }
 
   entity<K extends EntityName>(name: K): Table<EntityMap[K], string> {

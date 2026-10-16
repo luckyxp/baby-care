@@ -12,11 +12,11 @@
 import { computed, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { showConfirmDialog } from 'vant'
-import { LOG_KINDS, LOG_TYPES, RELATION_LABEL } from '@/shared/constants'
+import { LOG_KINDS, LOG_TYPES } from '@/shared/constants'
 import type { CareLog, LogType } from '@/shared/types'
 import { isSleeping, sleepMinutes, summarizeLog } from '@/domain/log-kinds'
 import { matchFeeding } from '@/domain/planner'
-import { percent, summarizeDay, summarizeEdu } from '@/domain/stats'
+import { summarizeDay, summarizeEdu } from '@/domain/stats'
 import { stageOf } from '@/library'
 import { db } from '@/db/client'
 import { useLive } from '@/db/live'
@@ -25,6 +25,8 @@ import LogSheet from '@/components/LogSheet.vue'
 import NoteThread from '@/components/NoteThread.vue'
 import SyncStatus from '@/components/SyncStatus.vue'
 import VoiceSheet from '@/components/VoiceSheet.vue'
+import AppIcon from '@/components/AppIcon.vue'
+import PlanProgress from '@/components/plan/PlanProgress.vue'
 import { useAction } from '@/composables/useAction'
 import { useClock } from '@/composables/useClock'
 import { useDay } from '@/composables/useDay'
@@ -32,7 +34,7 @@ import { useNotices } from '@/composables/useNotices'
 import { ensurePlan } from '@/services/plan'
 import { wakeUp } from '@/services/logs'
 import { useSession } from '@/stores/session'
-import { ageOf, ageText, atTime, elapsed, fmtDuration, hm } from '@/utils/time'
+import { ageOf, ageText, atTime, dayjs, elapsed, fmtDuration, hm } from '@/utils/time'
 
 const session = useSession()
 const router = useRouter()
@@ -99,6 +101,10 @@ const planProgress = computed(() => {
     total: day.tasks.value.length,
   }
 })
+const progressItems = computed(() => [
+  { label: '喂养', tone: 'feeding', ...planProgress.value.feeding }, { label: '早教', tone: 'edu', ...planProgress.value.edu },
+  { label: '日间亲子', tone: 'day', ...planProgress.value.day }, { label: '晚间亲子', tone: 'evening', ...planProgress.value.evening },
+])
 
 /* ── 记录 ───────────────────────────────────────────────────────────────── */
 
@@ -141,320 +147,112 @@ const noteCount = (log: CareLog) => day.notesOf('log', log.id).length
 
 <template>
   <div class="page page--tab home">
-    <!-- ── 宝宝卡 ── -->
-    <header class="hero">
+    <header class="hero page-body">
       <div class="row row--between top">
-        <SyncStatus />
-        <button class="bell" type="button" aria-label="消息" @click="router.push('/notices')">
-          <van-badge :content="unread || undefined" max="99"><van-icon name="bell" size="22" /></van-badge>
-        </button>
+        <span class="date-caption">{{ dayjs(today).format('M月D日 dddd') }}</span>
+        <div class="row"><SyncStatus /><button class="icon-button" type="button" aria-label="消息" @click="router.push('/notices')"><van-badge :content="unread || undefined" max="99"><AppIcon name="bell" :size="21" /></van-badge></button></div>
       </div>
-      <div v-if="baby" class="baby row" @click="babySheet = session.babies.length > 1">
-        <div class="avatar">{{ baby.gender === 'girl' ? '👧' : '👦' }}</div>
-        <div class="grow">
-          <div class="name">
-            {{ baby.name }}
-            <van-icon v-if="session.babies.length > 1" name="exchange" size="14" />
-          </div>
-          <div class="sub">{{ age && ageText(age) }} · {{ stage?.title }}</div>
-        </div>
-        <span class="pill role">{{ session.member ? RELATION_LABEL[session.member.relation] : '' }}{{ session.isAdmin ? ' · 管理员' : '' }}</span>
-      </div>
+      <button v-if="baby" type="button" class="baby row" :disabled="session.babies.length < 2" aria-label="切换宝宝" @click="babySheet = true">
+        <span class="avatar"><span v-if="baby.avatar">{{ baby.avatar }}</span><AppIcon v-else name="baby" :size="28" /></span>
+        <span class="grow"><strong class="name">{{ baby.name }} <van-icon v-if="session.babies.length > 1" name="arrow-down" size="12" /></strong><span class="sub">{{ age && ageText(age) }} · {{ stage?.title }}</span></span>
+      </button>
     </header>
 
-    <div class="page-body">
-      <!-- ── 状态卡 ── -->
-      <section class="status">
-        <div class="stat card" @click="record('milk')">
-          <div class="stat-label">🍼 距上次喂奶</div>
-          <template v-if="lastMilk">
-            <div class="stat-value">{{ elapsed(lastMilk.time, now) }}</div>
-            <div class="stat-sub ellipsis">{{ hm(lastMilk.time) }} {{ summarizeLog(lastMilk) }}</div>
-          </template>
-          <div v-else class="stat-value muted">暂无</div>
-          <div v-if="nextFeed" class="pill pill--primary next">下一顿 {{ nextFeed.time }}{{ nextFeed.amount ? ` · ${nextFeed.amount}ml` : '' }}</div>
-        </div>
-
-        <div class="stat card" :class="{ 'stat--sleep': sleeping }" @click="sleeping ? wake() : record('sleep')">
-          <div class="stat-label">😴 {{ sleeping ? '正在睡' : '已醒' }}</div>
-          <template v-if="sleeping">
-            <div class="stat-value">{{ fmtDuration(sleepMinutes(sleeping, now)) }}</div>
-            <div class="stat-sub">{{ hm(sleeping.time) }} 入睡</div>
-            <div class="pill pill--primary next">点这里记录醒来</div>
-          </template>
-          <template v-else-if="lastSleep?.endTime">
-            <div class="stat-value">{{ elapsed(lastSleep.endTime, now) }}</div>
-            <div class="stat-sub">上一觉 {{ fmtDuration(sleepMinutes(lastSleep)) }}</div>
-          </template>
-          <div v-else class="stat-value muted">暂无</div>
-        </div>
-      </section>
-
-      <div class="card today">
-        <div class="today-item"><b>{{ summary.milkMl }}</b><span>奶量 ml</span></div>
-        <div class="today-item"><b>{{ summary.bottleCount + summary.breastCount }}</b><span>喂奶次</span></div>
-        <div class="today-item"><b>{{ fmtDuration(summary.sleepMin).replace('分钟', '分') }}</b><span>睡眠</span></div>
-        <div class="today-item"><b>{{ summary.poop }}/{{ summary.pee }}</b><span>大/小便</span></div>
-        <div v-if="summary.tempMax" class="today-item" :class="{ fever: summary.fever }"><b>{{ summary.tempMax.toFixed(1) }}</b><span>最高℃</span></div>
-      </div>
-
-      <!-- ── 快捷记录 ── -->
-      <div class="section-title">快捷记录</div>
-      <section class="quick">
-        <button v-for="t in LOG_TYPES" :key="t" type="button" class="quick-btn" @click="record(t)">
-          <span class="quick-icon" :style="{ background: LOG_KINDS[t].color + '22' }">{{ t === 'sleep' && sleeping ? '⏰' : LOG_KINDS[t].icon }}</span>
-          <span>{{ t === 'sleep' && sleeping ? '醒了' : LOG_KINDS[t].label }}</span>
+    <main class="page-body">
+      <section class="status list-panel" aria-label="当前状态">
+        <button type="button" class="stat stat--milk" @click="record('milk')">
+          <span class="stat-label"><AppIcon name="milk" :size="16" /> 距上次喂奶</span>
+          <template v-if="lastMilk"><strong class="stat-value">{{ elapsed(lastMilk.time, now) }}</strong><span class="stat-sub">{{ hm(lastMilk.time) }} · {{ summarizeLog(lastMilk) }}</span></template>
+          <strong v-else class="stat-value muted">暂无记录</strong>
+          <span v-if="nextFeed" class="next">下一顿 {{ nextFeed.time }}{{ nextFeed.amount ? ` · ${nextFeed.amount}ml` : '' }}</span>
+        </button>
+        <button type="button" class="stat stat--sleep" @click="sleeping ? wake() : record('sleep')">
+          <span class="stat-label"><AppIcon name="sleep" :size="16" /> {{ sleeping ? '正在睡眠' : '清醒中' }}</span>
+          <template v-if="sleeping"><strong class="stat-value">{{ fmtDuration(sleepMinutes(sleeping, now)) }}</strong><span class="stat-sub">{{ hm(sleeping.time) }} 入睡</span><span class="next">记录醒来 <van-icon name="arrow" size="10" /></span></template>
+          <template v-else-if="lastSleep?.endTime"><strong class="stat-value">{{ elapsed(lastSleep.endTime, now) }}</strong><span class="stat-sub">上一觉 {{ fmtDuration(sleepMinutes(lastSleep)) }}</span></template>
+          <strong v-else class="stat-value muted">暂无记录</strong>
         </button>
       </section>
-      <van-button class="voice" round block icon="volume-o" type="primary" plain @click="voice = true">
-        说一句话记录（如「三点喝了150毫升奶」）
-      </van-button>
 
-      <!-- ── 今日计划 ── -->
-      <div class="section-title">
-        今日计划
-        <router-link class="link" to="/plan">查看 ›</router-link>
-      </div>
-      <router-link v-if="planProgress.total" to="/plan" class="card plan">
-        <div class="plan-item">
-          <van-circle :current-rate="percent(planProgress.feeding)" :rate="percent(planProgress.feeding)" size="52px" :stroke-width="80" color="#5AA9F8" :text="`${planProgress.feeding.done}/${planProgress.feeding.planned}`" />
-          <span>喂养</span>
-        </div>
-        <div class="plan-item">
-          <van-circle :current-rate="percent(planProgress.edu)" :rate="percent(planProgress.edu)" size="52px" :stroke-width="80" color="#FF8A65" :text="`${planProgress.edu.done}/${planProgress.edu.planned}`" />
-          <span>早教</span>
-        </div>
-        <div class="plan-item">
-          <van-circle :current-rate="percent(planProgress.day)" :rate="percent(planProgress.day)" size="52px" :stroke-width="80" color="#2FB893" :text="`${planProgress.day.done}/${planProgress.day.planned}`" />
-          <span>日间亲子</span>
-        </div>
-        <div class="plan-item">
-          <van-circle :current-rate="percent(planProgress.evening)" :rate="percent(planProgress.evening)" size="52px" :stroke-width="80" color="#8E7CF3" :text="`${planProgress.evening.done}/${planProgress.evening.planned}`" />
-          <span>🌙 晚间亲子</span>
-        </div>
-      </router-link>
-      <div v-else class="card muted empty-plan">
-        {{ session.isAdmin ? '正在根据月龄生成今日计划…' : '育儿嫂还没有生成今天的计划' }}
-      </div>
+      <section class="today" aria-label="今日累计">
+        <div><strong>{{ summary.milkMl }}</strong><span>奶量 ml</span></div>
+        <div><strong>{{ summary.bottleCount + summary.breastCount }}</strong><span>喂奶次数</span></div>
+        <div><strong>{{ fmtDuration(summary.sleepMin).replace('小时', '时').replace('分钟', '分') }}</strong><span>睡眠</span></div>
+        <div><strong>{{ summary.poop }} / {{ summary.pee }}</strong><span>大便 / 小便</span></div>
+      </section>
+      <p v-if="summary.fever && summary.tempMax" class="temperature fever">最高体温 {{ summary.tempMax.toFixed(1) }}℃</p>
 
-      <!-- ── 留言板 ── -->
-      <div class="section-title">家人留言 <small class="muted">交接事项、特别叮嘱</small></div>
-      <div class="card">
-        <NoteThread target-type="day" :target-id="today" :date="today" placeholder="如：下午带宝宝去打疫苗，记得带本子" />
-      </div>
+      <div class="section-title"><span>记录</span><button type="button" class="link" @click="voice = true"><AppIcon name="voice" :size="16" /> 语音</button></div>
+      <section class="quick list-panel" aria-label="快捷记录">
+        <button v-for="t in LOG_TYPES" :key="t" type="button" class="quick-btn" :data-kind="t" @click="record(t)">
+          <span class="quick-icon"><AppIcon :name="t === 'sleep' && sleeping ? 'sun' : t" :size="23" /></span><span>{{ t === 'sleep' && sleeping ? '醒了' : LOG_KINDS[t].label }}</span>
+        </button>
+      </section>
 
-      <!-- ── 最近记录 ── -->
-      <div class="section-title">
-        今天的记录
-        <router-link class="link" to="/logs">全部 ›</router-link>
-      </div>
-      <div class="card timeline">
-        <LogItem v-for="log in recent" :key="log.id" :log="log" :notes="noteCount(log)" @open="open" />
-        <van-empty v-if="!recent.length" image-size="72" description="今天还没有记录，点上方按钮开始吧" />
-      </div>
-    </div>
+      <div class="section-title"><span>今日计划</span><router-link class="link" to="/plan">查看 <van-icon name="arrow" size="11" /></router-link></div>
+      <router-link v-if="planProgress.total" to="/plan" class="card plan"><PlanProgress v-for="item in progressItems" :key="item.label" :done="item.done" :total="item.planned" :label="item.label" :tone="item.tone" /></router-link>
+      <router-link v-else :to="session.isAdmin ? '/plan/templates' : '/plan'" class="card empty-plan"><span>今天还没有安排</span><span class="template-link">{{ session.isAdmin ? '选择模板' : '查看计划' }} <van-icon name="arrow" size="11" /></span></router-link>
+
+      <div class="section-title">家人留言</div>
+      <div class="card"><NoteThread target-type="day" :target-id="today" :date="today" placeholder="留一句话给家人…" /></div>
+
+      <div class="section-title"><span>最近记录</span><router-link class="link" to="/logs">全部 <van-icon name="arrow" size="11" /></router-link></div>
+      <div class="card timeline"><LogItem v-for="log in recent" :key="log.id" :log="log" :notes="noteCount(log)" @open="open" /><van-empty v-if="!recent.length" image-size="56" description="今天还没有记录" /></div>
+    </main>
 
     <LogSheet v-model:show="sheet" :type="sheetType" :log="sheetLog" />
     <VoiceSheet v-model:show="voice" />
-    <van-action-sheet
-      v-model:show="babySheet"
-      :actions="babyActions"
-      cancel-text="取消"
-      close-on-click-action
-      teleport="body"
-      @select="(a: { id: string }) => session.switchBaby(a.id)"
-    />
+    <van-action-sheet v-model:show="babySheet" :actions="babyActions" cancel-text="取消" close-on-click-action teleport="body" @select="(a: { id: string }) => session.switchBaby(a.id)" />
   </div>
 </template>
 
 <style scoped>
-.hero {
-  padding: calc(var(--sp-3) + env(safe-area-inset-top)) var(--sp-4) var(--sp-4);
-  background: linear-gradient(160deg, var(--bc-primary-soft) 0%, var(--bc-bg) 100%);
-}
-
-.top {
-  margin-bottom: var(--sp-3);
-}
-
-.bell {
-  display: grid;
-  place-items: center;
-  width: 40px;
-  height: 40px;
-  border: 0;
-  border-radius: 50%;
-  background: var(--bc-surface);
-  color: var(--bc-text);
-  box-shadow: var(--bc-shadow);
-  cursor: pointer;
-}
-
-.baby {
-  gap: var(--sp-3);
-}
-
-.avatar {
-  display: grid;
-  place-items: center;
-  width: 56px;
-  height: 56px;
-  border-radius: 50%;
-  background: var(--bc-surface);
-  font-size: 32px;
-  box-shadow: var(--bc-shadow);
-}
-
-.name {
-  font-size: 20px;
-  font-weight: 700;
-}
-
-.sub {
-  color: var(--bc-text-2);
-}
-
-.role {
-  background: var(--bc-surface);
-}
-
-.status {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: var(--sp-3);
-}
-
-.stat {
-  margin: 0;
-  cursor: pointer;
-  min-height: 132px;
-}
-
-.stat--sleep {
-  background: linear-gradient(160deg, #3d3670, #5b4fa8);
-  color: #fff;
-}
-
-.stat--sleep .stat-label,
-.stat--sleep .stat-sub {
-  color: rgba(255, 255, 255, 0.8);
-}
-
-.stat-label {
-  font-size: 13px;
-  color: var(--bc-text-2);
-}
-
-.stat-value {
-  margin: 6px 0 2px;
-  font-size: 22px;
-  font-weight: 700;
-  font-variant-numeric: tabular-nums;
-}
-
-.stat-sub {
-  font-size: 12px;
-  color: var(--bc-text-3);
-}
-
-.next {
-  margin-top: var(--sp-2);
-}
-
-.today {
-  display: flex;
-  justify-content: space-around;
-  margin-top: var(--sp-3);
-  padding: var(--sp-3) var(--sp-2);
-}
-
-.today-item {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 2px;
-}
-
-.today-item b {
-  font-size: 17px;
-  font-variant-numeric: tabular-nums;
-}
-
-.today-item span {
-  font-size: 11px;
-  color: var(--bc-text-3);
-}
-
-.fever b {
-  color: var(--bc-danger);
-}
-
-.quick {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: var(--sp-2);
-}
-
-.quick-btn {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 6px;
-  padding: var(--sp-3) 0;
-  border: 0;
-  border-radius: var(--bc-radius);
-  background: var(--bc-surface);
-  box-shadow: var(--bc-shadow);
-  font-size: 13px;
-  cursor: pointer;
-  transition: transform 0.1s ease;
-}
-
-.quick-btn:active {
-  transform: scale(0.95);
-}
-
-.quick-icon {
-  display: grid;
-  place-items: center;
-  width: 44px;
-  height: 44px;
-  border-radius: 14px;
-  font-size: 24px;
-}
-
-.voice {
-  margin-top: var(--sp-3);
-}
-
-.plan {
-  display: flex;
-  justify-content: space-around;
-  color: inherit;
-  text-decoration: none;
-}
-
-.plan-item {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 6px;
-  font-size: 12px;
-  color: var(--bc-text-2);
-}
-
-.empty-plan {
-  text-align: center;
-}
-
-.section-title small {
-  font-weight: 400;
-  font-size: 12px;
-}
-
-.timeline {
-  padding-top: var(--sp-1);
-  padding-bottom: var(--sp-1);
-}
-
+.home { background: var(--bc-surface); }
+.hero { padding-top: calc(8px + env(safe-area-inset-top)); padding-bottom: 24px; }
+.top { min-height: 36px; margin-bottom: 8px; }
+.date-caption { font-size: 12px; color: var(--bc-text-3); }
+.baby { width: 100%; gap: 12px; padding: 0; text-align: left; background: transparent; border: 0; cursor: pointer; }
+.baby:disabled { opacity: 1; }
+.avatar { display: grid; place-items: center; flex: none; width: 44px; height: 44px; border-radius: 50%; background: var(--bc-surface-2); color: var(--bc-text-2); font-size: 26px; }
+.name { display: block; font-size: 21px; font-weight: 600; letter-spacing: -.4px; }
+.sub { display: block; margin-top: 3px; color: var(--bc-text-3); font-size: 12px; }
+.status { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; border: 0; border-radius: 0; background: transparent; }
+.status > * + * { border: 0; }
+.stat { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; min-width: 0; padding: 16px 14px; border: 0; border-radius: 14px; text-align: left; cursor: pointer; }
+.stat-label { display: flex; align-items: center; gap: 5px; font-size: 12px; color: var(--bc-text-2); }
+.stat-value { font-size: clamp(19px, 5.5vw, 24px); font-weight: 600; letter-spacing: -.5px; line-height: 1.3; font-variant-numeric: tabular-nums; }
+.stat-sub { display: block; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; color: var(--bc-text-2); }
+.stat--milk { background: var(--bc-milk-soft); }
+.stat--milk .stat-label > svg, .stat--milk .next { color: var(--bc-milk); }
+.stat--sleep { background: var(--bc-sleep-soft); }
+.stat--sleep .stat-label > svg, .stat--sleep .next { color: var(--bc-sleep); }
+.next { font-size: 11px; }
+.today { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); padding: 24px 0 20px; gap: 8px; border-bottom: 1px solid var(--bc-border); }
+.today > div { display: flex; flex-direction: column; gap: 6px; text-align: center; }
+.today > div + div { border-left: 1px solid var(--bc-border); }
+.today strong { font-size: 16px; font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.today span { color: var(--bc-text-3); font-size: 11px; }
+.temperature { font-size: 12px; text-align: right; color: var(--bc-text-3); }
+.fever { color: var(--bc-danger); }
+.quick { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px 4px; padding: 0; overflow: visible; border: 0; border-radius: 0; }
+.quick > * + * { border: 0; }
+.quick-btn { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; min-height: 78px; padding: 4px; border: 0; border-radius: 12px; background: transparent; cursor: pointer; }
+.quick-icon { display: grid; place-items: center; width: 42px; height: 42px; border-radius: 14px; background: var(--bc-surface-2); color: var(--bc-text-2); }
+.quick-btn[data-kind=milk] .quick-icon { color: var(--bc-blue); background: var(--bc-blue-soft); }
+.quick-btn[data-kind=solid] .quick-icon { color: var(--bc-milk); background: var(--bc-milk-soft); }
+.quick-btn[data-kind=diaper] .quick-icon { color: var(--bc-diaper); background: var(--bc-diaper-soft); }
+.quick-btn[data-kind=sleep] .quick-icon { color: var(--bc-sleep); background: var(--bc-sleep-soft); }
+.quick-btn[data-kind=temp] .quick-icon { color: var(--bc-temp); background: var(--bc-temp-soft); }
+.quick-btn[data-kind=medicine] .quick-icon { color: var(--bc-medicine); background: var(--bc-medicine-soft); }
+.quick-btn[data-kind=growth] .quick-icon { color: var(--bc-growth); background: var(--bc-growth-soft); }
+.quick-btn span:last-child { font-size: 12px; color: var(--bc-text-2); }
+.quick-btn:active { background: var(--bc-surface-2); opacity: 1; }
+.plan { display: flex; gap: 20px; color: inherit; text-decoration: none; background: var(--bc-bg); padding: 16px; border-radius: 12px; }
+.empty-plan { display: flex; justify-content: space-between; align-items: center; color: var(--bc-text-2); font-size: 13px; text-decoration: none; background: var(--bc-bg); border-radius: 12px; }
+.template-link { color: var(--bc-text); font-weight: 500; }
+.timeline { padding: 0; }
+.section-title { margin-top: 24px; margin-bottom: 12px; font-size: 16px; }
+.section-title .link { color: var(--bc-text-3); font-size: 12px; }
+.section-title + .card:has(.thread) { padding: 0; }
+@media (max-width: 390px) { .stat { padding: 14px 12px; } .plan { gap: 12px; } }
 </style>

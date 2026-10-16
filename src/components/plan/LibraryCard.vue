@@ -6,6 +6,8 @@ import { computed, ref } from 'vue'
 import { EDU_CATEGORIES } from '@/shared/constants'
 import type { EduActivity, Interaction, Recipe } from '@/library'
 import { isRecipe, type LibraryPick } from '@/services/plan'
+import AppIcon from '@/components/AppIcon.vue'
+import IconBadge from '@/components/IconBadge.vue'
 
 const props = defineProps<{ item: LibraryPick; picking: boolean; loading?: boolean; added?: boolean }>()
 defineEmits<{ pick: [item: LibraryPick] }>()
@@ -18,97 +20,47 @@ const ageRange = computed(() => activity.value ? `${activity.value.min}-${activi
 </script>
 
 <template>
-  <article class="card library-card">
-    <button type="button" class="expand" :aria-expanded="open" @click="open = !open">
-      <div class="grow">
-        <div class="tags">
-          <span v-if="category" class="pill" :style="{ color: category.color }">{{ category.icon }} {{ category.label }}</span>
-          <span v-if="recipe" class="pill">🥣 {{ recipe.texture }}</span>
-          <span class="pill">{{ ageRange }}</span>
-          <span v-if="activity" class="pill">{{ activity.duration }}分钟</span>
-          <span v-if="activity && 'slot' in activity" class="pill">{{ activity.slot === 'evening' ? '🌙 晚间' : '☀️ 日间' }}</span>
-        </div>
-        <h3>{{ title }}</h3>
-        <p v-if="activity">{{ activity.goal }}</p>
-        <p v-if="recipe">{{ recipe.ingredients.join('、') }}</p>
-      </div>
-      <van-icon :name="open ? 'arrow-up' : 'arrow-down'" />
-    </button>
+  <article class="library-card">
+    <div class="library-head">
+      <button type="button" class="expand grow" :aria-expanded="open" @click="open = !open">
+        <IconBadge :name="recipe ? 'solid' : activity?.category ?? 'other'" />
+        <span class="grow">
+          <strong>{{ title }}</strong>
+          <span class="meta"><span>{{ category?.label ?? recipe?.texture }}</span><span>{{ ageRange }}</span><span v-if="activity">{{ activity.duration }} 分钟</span></span>
+        </span>
+        <van-icon :name="open ? 'arrow-up' : 'arrow-down'" size="12" class="muted" />
+      </button>
+      <button v-if="picking" type="button" class="pick-button" :disabled="added || loading" :aria-label="`${added ? '已添加' : '添加'}${title}`" @click="$emit('pick', item)"><span><van-loading v-if="loading" size="14" /><AppIcon v-else :name="added ? 'check' : 'plus'" :size="18" /></span></button>
+    </div>
 
     <div v-if="open" class="details">
+      <p v-if="activity">{{ activity.goal }}</p>
       <p v-if="activity?.materials.length"><strong>准备：</strong>{{ activity.materials.join('、') }}</p>
       <p v-if="recipe"><strong>食材：</strong>{{ recipe.ingredients.join('、') }}</p>
       <ol>
         <li v-for="(step, i) in item.steps" :key="i">{{ step }}</li>
       </ol>
-      <p v-if="activity && 'observe' in activity" class="hint">👀 观察要点：{{ activity.observe }}</p>
-      <p v-if="'tip' in item" class="hint">💡 {{ item.tip }}</p>
+      <p v-if="activity && 'observe' in activity" class="hint">观察：{{ activity.observe }}</p>
+      <p v-if="'tip' in item" class="hint">{{ item.tip }}</p>
       <p v-if="recipe?.allergens.length" class="allergens">常见过敏原：{{ recipe.allergens.join('、') }}</p>
     </div>
 
-    <div v-if="picking" class="pick-row">
-      <small class="muted">{{ recipe ? '加入后可在计划页设置用餐时间' : '按所选时段加入当天计划' }}</small>
-      <van-button size="small" round type="primary" :loading="loading" :disabled="added" @click="$emit('pick', item)">
-        {{ added ? '已在计划中' : '加入计划' }}
-      </van-button>
-    </div>
   </article>
 </template>
 
 <style scoped>
-.expand {
-  display: flex;
-  align-items: center;
-  gap: var(--sp-3);
-  width: 100%;
-  padding: 0;
-  border: 0;
-  background: none;
-  text-align: left;
-  cursor: pointer;
-}
-.tags {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
-}
-h3 {
-  margin: 8px 0 4px;
-  font-size: 16px;
-}
-p {
-  margin: 4px 0;
-  font-size: 13px;
-  color: var(--bc-text-2);
-}
-.details {
-  padding-top: var(--sp-3);
-  margin-top: var(--sp-3);
-  border-top: 1px dashed var(--bc-border);
-}
-ol {
-  padding-left: 20px;
-  margin: 8px 0;
-  font-size: 13px;
-  line-height: 1.8;
-}
-.hint {
-  padding: 8px 12px;
-  background: var(--bc-surface-2);
-  border-radius: var(--bc-radius-sm);
-}
-.allergens {
-  color: var(--bc-danger);
-}
-.pick-row {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 8px;
-  margin-top: 12px;
-}
-.pick-row small {
-  flex: 1;
-  min-width: 0;
-}
+.library-card { padding: 0 16px; background: var(--bc-surface); }
+.library-head { display: flex; align-items: center; gap: 12px; }
+.expand { display: flex; align-items: center; gap: 12px; min-width: 0; min-height: 76px; padding: 14px 0; border: 0; background: transparent; text-align: left; cursor: pointer; }
+.pick-button { display: grid; place-items: center; width: 44px; height: 44px; padding: 0; border: 0; background: transparent; cursor: pointer; }
+.pick-button > span { display: grid; place-items: center; width: 28px; height: 28px; border-radius: 50%; background: var(--bc-surface-2); color: var(--bc-text); }
+.pick-button:disabled > span { color: var(--bc-text-3); background: transparent; }
+.expand strong { display: block; font-size: 14px; line-height: 1.5; font-weight: 500; overflow-wrap: anywhere; }
+.meta { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 8px; margin-top: 5px; font-size: 11px; color: var(--bc-text-3); }
+.meta > span + span::before { content: '·'; margin-right: 8px; }
+.details { padding: 0 0 16px 48px; }
+p { margin: 0 0 10px; font-size: 13px; color: var(--bc-text-2); line-height: 1.7; }
+ol { padding-left: 18px; margin: 12px 0; font-size: 13px; line-height: 1.8; }
+.hint { padding: 10px 12px; background: var(--bc-surface-2); border-radius: 8px; }
+.allergens { color: var(--bc-danger); }
 </style>

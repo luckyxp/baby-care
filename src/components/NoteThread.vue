@@ -97,11 +97,11 @@ async function submit() {
 .input {
   flex: 1;
   min-width: 0;
-  height: 36px;
+  height: 44px;
   padding: 0 var(--sp-3);
-  border: 1px solid var(--bc-border);
-  border-radius: 999px;
-  background: var(--bc-surface);
+  border: 1px solid transparent;
+  border-radius: 10px;
+  background: var(--bc-surface-2);
   outline: none;
 }
 

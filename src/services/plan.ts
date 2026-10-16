@@ -1,29 +1,31 @@
 /* ============================================================================
  *  计划模块的业务操作（均经 repo 写入：权限预检 + 乐观落库 + 离线队列）
  * ----------------------------------------------------------------------------
- *  自动生成   ensurePlan        今天及未来、本地尚无计划时按月龄方案生成
+ *  日期计划   ensurePlan        今天及未来、本地尚无计划时创建空计划
+ *  日模板库   saveDailyTemplate / removeDailyTemplate / applyDailyTemplate
  *  批量调整   regenerate        换一批早教与亲子（保留喂养与已打卡任务）
- *             resetFeeding      按默认作息重建未完成的喂养任务
- *             saveAsDefaultSchedule  把当天喂养时点存为宝宝默认作息
  *  单条调整   swapTask / addFromLibrary / addCustomTask / updateTask / removeTask
  *  打卡       checkin / undoCheckin
  * ========================================================================== */
 
-import { EDU_KEYS, MEDICINE_PRESETS } from '@/shared/constants'
+import { MEDICINE_PRESETS } from '@/shared/constants'
 import { ApiError } from '@/shared/errors'
 import type {
-  Baby, Checkin, DateKey, EduCategory, FeedKind, PlanTask, PlanTemplate, Rating, Slot, TaskKind,
+  Baby, Checkin, DateKey, FeedKind, PlanTask, PlanTemplate, Rating, Slot,
 } from '@/shared/types'
-import { type EduActivity, type Interaction, type Recipe } from '@/library'
+import { stageOf, type EduActivity, type Interaction, type Recipe } from '@/library'
+import { normalizeTaskInput, normalizeTemplateTasks, type TaskInput } from '@/domain/plan-task'
 import {
-  FEED_LOG_TYPE, activityTask, matchFeeding, planIdOf, recommendPlan, scheduleFromTasks, slotOfTime,
+  FEED_LOG_TYPE, activityTask, matchFeeding, planIdOf, recommendPlan,
   swapCandidate,
 } from '@/domain/planner'
 import { db } from '@/db/client'
 import { useSession } from '@/stores/session'
 import { create, createMany, remove, removeMany, update, type Draft, type Patch } from '@/db/repo'
 import type { LogInput } from './logs'
-import { atTime, dayjs, todayKey } from '@/utils/time'
+import { ageOf, atTime, dayjs, todayKey } from '@/utils/time'
+
+export type { TaskInput } from '@/domain/plan-task'
 
 export type LibraryPick = EduActivity | Interaction | Recipe
 
@@ -37,11 +39,11 @@ async function nextOrder(babyId: string, date: DateKey): Promise<number> {
   return tasks.reduce((m, t) => Math.max(m, t.order), 0) + 1
 }
 
-/* ── 自动生成 ────────────────────────────────────────────────────────────── */
+/* ── 日期计划 ────────────────────────────────────────────────────────────── */
 
 const inflight = new Map<string, Promise<void>>()
 
-/** 仅育儿嫂可触发；过去日期不自动生成。计划、任务和队列在同一本地事务写入。 */
+/** 仅育儿嫂可触发；只建计划容器，具体任务由日模板或手工安排。 */
 export function ensurePlan(baby: Baby, date: DateKey): Promise<void> {
   if (date < todayKey() || !useSession().isAdmin) {
     return Promise.resolve()
@@ -58,88 +60,107 @@ export function ensurePlan(baby: Baby, date: DateKey): Promise<void> {
     if (plan || tasks.length) {
       return
     }
-    const bundle = recommendPlan(baby, date)
-    await createMany('plans', [bundle.plan])
+    const stage = stageOf(ageOf(baby.birthday, date).monthsFloat)
+    await create('plans', { id, babyId: baby.id, date, stageKey: stage.key, focus: stage.focus })
   }).finally(() => inflight.delete(key))
   inflight.set(key, job)
   return job
 }
 
-/** 版本升级时移除旧版自动填充内容，手工任务保持不变。 */
-export async function clearLegacyAutoTasks(baby: Baby, date: DateKey): Promise<void> {
-  const tasks = await tasksOf(baby.id, date)
-  const stale = tasks.filter((task) => task.id.startsWith(`task:${baby.id}:${date}:`))
-  if (!stale.length) return
-  const checkins = await checkinsOf(baby.id, date)
-  await removeMany('checkins', checkins.filter((checkin) => stale.some((task) => task.id === checkin.taskId)).map((checkin) => checkin.id))
-  await removeMany('tasks', stale.map((task) => task.id))
-}
+/* ----------------------------------------------------------------------------
+ * 日模板：一次保存完整的一天；应用后各日期拥有独立任务，后续编辑互不影响。
+ * -------------------------------------------------------------------------- */
 
-/** 应用模板会替换选中日期所在周的全部安排，由界面在调用前明确确认。 */
-export async function applyTemplate(baby: Baby, date: DateKey, template?: PlanTemplate): Promise<void> {
-  const monday = dayjs(date).subtract((dayjs(date).day() + 6) % 7, 'day')
-  for (let weekday = 1; weekday <= 7; weekday++) {
-    const target = monday.add(weekday - 1, 'day').format('YYYY-MM-DD')
-    const d = db()
-    await d.transaction('rw', [d.plans, d.tasks, d.checkins, d.outbox], async () => {
-    const [tasks, checkins] = await Promise.all([tasksOf(baby.id, target), checkinsOf(baby.id, target)])
-    await removeMany('checkins', checkins.map((checkin) => checkin.id))
-    await removeMany('tasks', tasks.map((task) => task.id))
-    const bundle = recommendPlan(baby, target)
-    const planId = planIdOf(baby.id, target)
-    if (await d.plans.get(planId)) {
-      await update('plans', { id: planId, stageKey: bundle.plan.stageKey, focus: bundle.plan.focus })
-    } else {
-      await createMany('plans', [bundle.plan])
-    }
-    const drafts = template
-      ? template.tasks.filter((task) => task.weekday === dayjs(target).day()).map((task) => ({
-        babyId: baby.id, date: target, kind: task.kind, category: task.category, slot: task.slot,
-        assignee: task.slot === 'evening' ? 'parent' as const : 'nanny' as const,
-        time: task.time, title: task.title, desc: task.desc, steps: task.steps, sourceId: task.sourceId, amount: task.amount, order: task.order,
-      }))
-      : bundle.tasks.map(({ id: _id, ...task }) => task)
-    if (drafts.length) {
-      await createMany('tasks', drafts)
-    }
-    })
-  }
-}
-
-/** 保存完整周期模板；每条安排须明确属于周一至周日中的一天。 */
-export async function saveWeeklyTemplate(baby: Baby, name: string, tasks: PlanTemplate['tasks'], id?: string): Promise<void> {
+export async function saveDailyTemplate(baby: Baby, name: string, tasks: PlanTemplate['tasks'], id?: string): Promise<PlanTemplate> {
   const title = name.trim()
-  if (!title) throw new ApiError('INVALID', '请填写模板名称')
-  if (!tasks.length) throw new ApiError('INVALID', '请至少添加一条周期安排')
-  if (tasks.some((task) => task.weekday < 0 || task.weekday > 6 || !task.title.trim())) throw new ApiError('INVALID', '模板安排不完整')
+  if (!title) throw new ApiError('INVALID', '请填写日模板名称')
+  const normalized = normalizeTemplateTasks(tasks)
   if (id) {
-    await update('templates', { id, name: title, tasks })
-  } else {
-    await create('templates', { babyId: baby.id, name: title, tasks })
+    const previous = await db().dailyTemplates.get(id)
+    if (!previous || previous.deleted || previous.babyId !== baby.id) throw new ApiError('NOT_FOUND', '日模板不存在')
+    return update('dailyTemplates', { id, name: title, tasks: normalized })
   }
+  return create('dailyTemplates', { babyId: baby.id, name: title, tasks: normalized })
+}
+
+export async function removeDailyTemplate(baby: Baby, id: string): Promise<void> {
+  const template = await db().dailyTemplates.get(id)
+  if (!template || template.deleted || template.babyId !== baby.id) throw new ApiError('NOT_FOUND', '日模板不存在')
+  await remove('dailyTemplates', id)
+}
+
+/** 整批日期原子应用，只替换未完成任务；已打卡、已关联日志的任务保持原样。 */
+export async function applyDailyTemplate(
+  baby: Baby, dates: DateKey[], template: Pick<PlanTemplate, 'babyId' | 'name' | 'tasks'>,
+): Promise<number> {
+  if (template.babyId !== baby.id) throw new ApiError('INVALID', '请选择当前宝宝的日模板')
+  const targets = [...new Set(dates)].sort()
+  if (!targets.length) throw new ApiError('INVALID', '请至少选择一天')
+  if (targets.some((date) => !/^\d{4}-\d{2}-\d{2}$/.test(date) || dayjs(date).format('YYYY-MM-DD') !== date || date < todayKey() || date < baby.birthday)) {
+    throw new ApiError('INVALID', '请选择今天或之后的有效日期')
+  }
+  const entries = normalizeTemplateTasks(template.tasks)
+  const signature = (task: PlanTask | PlanTemplate['tasks'][number]) => JSON.stringify([
+    task.kind, task.category, task.slot, task.time, task.sourceId, task.title,
+  ])
+  const d = db()
+  await d.transaction('rw', [d.plans, d.tasks, d.checkins, d.logs, d.outbox], async () => {
+    for (const target of targets) {
+      const [tasks, checkins, logs] = await Promise.all([
+        tasksOf(baby.id, target), checkinsOf(baby.id, target),
+        d.logs.where('[babyId+date]').equals([baby.id, target]).toArray(),
+      ])
+      const completed = new Set([
+        ...checkins.map((checkin) => checkin.taskId),
+        ...logs.flatMap((log) => log.taskId ? [log.taskId] : []),
+        ...matchFeeding(tasks, logs).keys(),
+      ])
+      const retained = new Map<string, number>()
+      tasks.filter((task) => completed.has(task.id)).forEach((task) => {
+        const key = signature(task)
+        retained.set(key, (retained.get(key) ?? 0) + 1)
+      })
+      await removeMany('tasks', tasks.filter((task) => !completed.has(task.id)).map((task) => task.id))
+
+      const stage = stageOf(ageOf(baby.birthday, target).monthsFloat)
+      const plan = { babyId: baby.id, date: target, stageKey: stage.key, focus: stage.focus }
+      const id = planIdOf(baby.id, target)
+      if (await d.plans.get(id)) await update('plans', { id, ...plan })
+      else await create('plans', { id, ...plan })
+
+      const drafts = entries.flatMap((entry) => {
+        const key = signature(entry)
+        const count = retained.get(key) ?? 0
+        if (count) {
+          retained.set(key, count - 1)
+          return []
+        }
+        return [{ ...normalizeTaskInput(entry), babyId: baby.id, date: target, sourceId: entry.sourceId, order: entry.order }]
+      })
+      if (drafts.length) await createMany('tasks', drafts)
+    }
+  })
+  return targets.length
 }
 
 /** 清空当前宝宝的护理数据与计划配置，保留档案、家庭成员和消息。 */
 export async function clearCareData(baby: Baby): Promise<void> {
   const d = db()
   const [logs, notes, plans, tasks, checkins, reports, templates] = await Promise.all([
-    d.logs.toArray(), d.notes.toArray(), d.plans.toArray(), d.tasks.toArray(), d.checkins.toArray(), d.reports.toArray(), d.templates.toArray(),
+    d.logs.toArray(), d.notes.toArray(), d.plans.toArray(), d.tasks.toArray(), d.checkins.toArray(), d.reports.toArray(), d.dailyTemplates.toArray(),
   ])
-  await d.transaction('rw', [d.logs, d.notes, d.plans, d.tasks, d.checkins, d.reports, d.templates, d.outbox], async () => {
+  await d.transaction('rw', [d.logs, d.notes, d.plans, d.tasks, d.checkins, d.reports, d.dailyTemplates, d.outbox], async () => {
     await removeMany('checkins', checkins.filter((item) => item.babyId === baby.id).map((item) => item.id))
     await removeMany('tasks', tasks.filter((item) => item.babyId === baby.id).map((item) => item.id))
     await removeMany('plans', plans.filter((item) => item.babyId === baby.id).map((item) => item.id))
     await removeMany('reports', reports.filter((item) => item.babyId === baby.id).map((item) => item.id))
     await removeMany('notes', notes.filter((item) => item.babyId === baby.id).map((item) => item.id))
     await removeMany('logs', logs.filter((item) => item.babyId === baby.id).map((item) => item.id))
-    await removeMany('templates', templates.filter((item) => item.babyId === baby.id).map((item) => item.id))
+    await removeMany('dailyTemplates', templates.filter((item) => item.babyId === baby.id).map((item) => item.id))
   })
 }
 
-/**
- * 宝宝生日调整后，同步今天及未来的系统默认任务。
- * 已打卡任务、手工新增任务和育儿嫂保存的自定义作息均保持原样。
- */
+/** 宝宝生日调整后只更新日期计划的月龄信息，已经安排的任务内容保持独立。 */
 export async function refreshUpcomingPlans(baby: Baby): Promise<number> {
   const today = todayKey()
   const d = db()
@@ -147,44 +168,10 @@ export async function refreshUpcomingPlans(baby: Baby): Promise<number> {
   const targets = plans.filter((plan) => plan.babyId === baby.id && plan.date >= today)
 
   for (const plan of targets) {
-    await d.transaction('rw', [d.plans, d.tasks, d.checkins, d.outbox], async () => {
-      const [tasks, checkins] = await Promise.all([tasksOf(baby.id, plan.date), checkinsOf(baby.id, plan.date)])
-      const completed = new Set(checkins.map((checkin) => checkin.taskId))
-      const systemId = (id: string) => id.startsWith(`task:${baby.id}:${plan.date}:`)
-      const stale = tasks.filter((task) => systemId(task.id) && !completed.has(task.id))
-      const keptIds = new Set(tasks.filter((task) => completed.has(task.id)).map((task) => task.id))
-      const bundle = recommendPlan(baby, plan.date)
-      const fresh = bundle.tasks.filter((task) => !keptIds.has(task.id!))
-
-      await removeMany('tasks', stale.map((task) => task.id))
-      await update('plans', { id: plan.id, stageKey: bundle.plan.stageKey, focus: bundle.plan.focus })
-      if (fresh.length) {
-        await createMany('tasks', fresh)
-      }
-    })
+    const stage = stageOf(ageOf(baby.birthday, plan.date).monthsFloat)
+    await update('plans', { id: plan.id, stageKey: stage.key, focus: stage.focus })
   }
   return targets.length
-}
-
-/** 切换日期时为默认作息补齐当天辅食菜单；不改自定义作息和已经记录的餐次。 */
-export async function refreshDefaultMeals(baby: Baby, date: DateKey): Promise<void> {
-  if (baby.schedule || date < todayKey()) {
-    return
-  }
-  const tasks = await tasksOf(baby.id, date)
-  const expected = recommendPlan(baby, date).tasks.filter((task) => task.kind === 'feeding' && task.category === 'solid')
-  const logs = await db().logs.where('[babyId+date]').equals([baby.id, date]).toArray()
-  const matched = matchFeeding(tasks, logs)
-
-  for (const fresh of expected) {
-    const current = tasks.find((task) => task.id === fresh.id)
-    if (!current || matched.has(current.id) || current.sourceId === fresh.sourceId) {
-      continue
-    }
-    await update('tasks', {
-      id: current.id, title: fresh.title, desc: fresh.desc, steps: fresh.steps, sourceId: fresh.sourceId,
-    })
-  }
 }
 
 /* ── 批量调整 ───────────────────────────────────────────────────────────── */
@@ -225,33 +212,6 @@ export async function regenerate(baby: Baby, date: DateKey): Promise<void> {
   })
 }
 
-export async function resetFeeding(baby: Baby, date: DateKey): Promise<void> {
-  const d = db()
-  await d.transaction('rw', [d.tasks, d.logs, d.outbox], async () => {
-    const [tasks, logs] = await Promise.all([
-      tasksOf(baby.id, date), d.logs.where('[babyId+date]').equals([baby.id, date]).toArray(),
-    ])
-    const matched = matchFeeding(tasks, logs)
-    const feeding = tasks.filter((t) => t.kind === 'feeding')
-    const kept = feeding.filter((t) => matched.has(t.id))
-    const keptSlots = new Set(kept.map((t) => `${t.category}:${t.time}`))
-    const fresh = recommendPlan(baby, date).tasks
-      .filter((task) => task.kind === 'feeding' && !keptSlots.has(`${task.category}:${task.time}`))
-    await removeMany('tasks', feeding.filter((t) => !matched.has(t.id)).map((t) => t.id))
-    if (fresh.length) {
-      await createMany('tasks', fresh)
-    }
-  })
-}
-
-export async function saveAsDefaultSchedule(baby: Baby, tasks: PlanTask[]): Promise<void> {
-  const schedule = scheduleFromTasks(tasks)
-  if (!schedule.length) {
-    throw new ApiError('INVALID', '当天没有带时间的喂养任务')
-  }
-  await update('babies', { id: baby.id, schedule })
-}
-
 /* ── 单条调整 ───────────────────────────────────────────────────────────── */
 
 export async function swapTask(task: PlanTask, months: number, taken: Set<string>): Promise<PlanTask> {
@@ -275,52 +235,15 @@ export async function addFromLibrary(baby: Baby, date: DateKey, item: LibraryPic
   return create('tasks', activityTask(baby, date, item, slot, order))
 }
 
-export interface TaskInput {
-  kind: TaskKind
-  category: FeedKind | EduCategory | null
-  slot: Slot
-  title: string
-  desc: string
-  steps: string[]
-  time: string | null
-  amount: number | null
-}
-
-/** 喂养任务的时段由时间推导、始终由育儿嫂执行；晚间活动留给家长 */
-function normalize(input: TaskInput): Omit<TaskInput, 'kind'> & { assignee: PlanTask['assignee'] } {
-  const feeding = input.kind === 'feeding'
-  const categories = feeding ? ['milk', 'solid', 'supplement', 'water'] : EDU_KEYS
-  if (!input.title.trim() || !input.category || !(categories as readonly string[]).includes(input.category)) {
-    throw new ApiError('INVALID', '请填写任务名称并选择正确类别')
-  }
-  if (input.time && !/^([01]\d|2[0-3]):[0-5]\d$/.test(input.time)) {
-    throw new ApiError('INVALID', '时间格式应为 HH:mm')
-  }
-  if (input.amount !== null && (!Number.isFinite(input.amount) || input.amount < 0 || input.amount > 400)) {
-    throw new ApiError('INVALID', '计划量应在 0-400ml 之间')
-  }
-  const slot = feeding && input.time ? slotOfTime(input.time) : input.slot
-  return {
-    category: input.category,
-    slot,
-    assignee: !feeding && slot === 'evening' ? 'parent' : 'nanny',
-    title: input.title.trim(),
-    desc: input.desc.trim(),
-    steps: input.steps.map((s) => s.trim()).filter(Boolean),
-    time: input.time || null,
-    amount: feeding && (input.category === 'milk' || input.category === 'water') ? input.amount : null,
-  }
-}
-
 export async function addCustomTask(baby: Baby, date: DateKey, input: TaskInput): Promise<PlanTask> {
   const draft: Draft<PlanTask> = {
-    babyId: baby.id, date, kind: input.kind, ...normalize(input), sourceId: null, order: await nextOrder(baby.id, date),
+    babyId: baby.id, date, ...normalizeTaskInput(input), sourceId: null, order: await nextOrder(baby.id, date),
   }
   return create('tasks', draft)
 }
 
 export function updateTask(task: PlanTask, input: TaskInput): Promise<PlanTask> {
-  const patch: Patch<PlanTask> = { id: task.id, ...normalize({ ...input, kind: task.kind }) }
+  const patch: Patch<PlanTask> = { id: task.id, ...normalizeTaskInput({ ...input, kind: task.kind }) }
   return update('tasks', patch)
 }
 

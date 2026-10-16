@@ -72,19 +72,19 @@ async function logout() {
 <template>
   <div class="page">
     <header class="head">
-      <h2>你好，{{ session.user?.nickname }} 👋</h2>
+      <h2>你好，{{ session.user?.nickname }}</h2>
       <p class="text-2">先告诉我们你的身份</p>
     </header>
 
     <div class="page-body">
       <div class="modes">
         <button type="button" class="mode" :class="{ on: mode === 'create' }" @click="mode = 'create'">
-          <span class="emoji">👩‍🍼</span>
+          <span class="emoji"><van-icon name="user-o" size="24" /></span>
           <strong>我是育儿嫂</strong>
           <small>创建宝宝档案，邀请爸爸妈妈</small>
         </button>
         <button type="button" class="mode" :class="{ on: mode === 'join' }" @click="mode = 'join'">
-          <span class="emoji">👨‍👩‍👧</span>
+          <span class="emoji"><van-icon name="friends-o" size="24" /></span>
           <strong>我是爸爸 / 妈妈</strong>
           <small>输入育儿嫂给的邀请码</small>
         </button>
@@ -94,7 +94,6 @@ async function logout() {
         <div class="card-title">宝宝档案</div>
         <BabyForm ref="formRef" v-model="baby" />
         <van-button class="action" round block type="primary" :loading="busy" @click="create">创建并成为管理员</van-button>
-        <p class="muted small">创建后你将拥有全部管理与编辑权限，系统会根据宝宝生日自动匹配月龄方案。</p>
       </div>
 
       <div v-else class="card">

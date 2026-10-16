@@ -15,22 +15,22 @@ const open = ref(false)
       <div class="grow">
         <div class="row">
           <strong class="title">{{ stage.title }}</strong>
-          <span class="pill pill--primary">{{ ageText }}</span>
+          <span class="age">{{ ageText }}</span>
         </div>
-        <div class="focus">🎯 {{ stage.focus }}</div>
       </div>
-      <span class="toggle">{{ open ? '收起' : '月龄方案' }} <van-icon :name="open ? 'arrow-up' : 'arrow-down'" /></span>
+      <span class="toggle">{{ open ? '收起' : '月龄详情' }} <van-icon :name="open ? 'arrow-up' : 'arrow-down'" /></span>
     </button>
 
     <div v-if="open" class="body">
+      <p class="focus">{{ stage.focus }}</p>
       <div class="block">
-        <div class="block-title">🌱 本阶段里程碑（{{ stage.range }}）</div>
+        <div class="block-title">发育里程碑 · {{ stage.range }}</div>
         <ul>
           <li v-for="m in stage.milestones" :key="m">{{ m }}</li>
         </ul>
       </div>
       <div class="block">
-        <div class="block-title">🍼 奶量参考</div>
+        <div class="block-title">奶量参考</div>
         <p>
           单次 {{ stage.milk.perFeed[0] }}-{{ stage.milk.perFeed[1] }}ml · 每天 {{ stage.milk.times[0] }}-{{ stage.milk.times[1] }} 次 ·
           全天 {{ stage.milk.daily[0] }}-{{ stage.milk.daily[1] }}ml · {{ stage.milk.interval }}
@@ -38,12 +38,12 @@ const open = ref(false)
         <p class="muted">{{ stage.milk.tip }}</p>
       </div>
       <div class="block">
-        <div class="block-title">🥣 辅食</div>
+        <div class="block-title">辅食</div>
         <p>{{ stage.solid.enabled ? `每天 ${stage.solid.meals} 餐 · ${stage.solid.texture}` : stage.solid.texture }}</p>
         <p class="muted">{{ stage.solid.tip }}</p>
       </div>
       <div class="block">
-        <div class="block-title">😴 睡眠</div>
+        <div class="block-title">睡眠</div>
         <p>全天 {{ stage.sleep.total[0] }}-{{ stage.sleep.total[1] }} 小时 · {{ stage.sleep.naps }}</p>
         <p class="muted">{{ stage.sleep.tip }}</p>
       </div>
@@ -53,14 +53,15 @@ const open = ref(false)
 
 <style scoped>
 .stage {
-  background: linear-gradient(135deg, var(--bc-primary-soft), var(--bc-surface) 70%);
+  padding: 0 14px;
 }
 
 .head {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   gap: var(--sp-3);
   width: 100%;
+  min-height: 52px;
   padding: 0;
   border: 0;
   background: none;
@@ -69,8 +70,11 @@ const open = ref(false)
 }
 
 .title {
-  font-size: 17px;
+  font-size: 14px;
+  font-weight: 500;
 }
+
+.age { color: var(--bc-text-3); font-size: 12px; }
 
 .focus {
   margin-top: 6px;
@@ -87,8 +91,8 @@ const open = ref(false)
 
 .body {
   margin-top: var(--sp-3);
-  border-top: 1px dashed var(--bc-border);
-  padding-top: var(--sp-2);
+  border-top: 1px solid var(--bc-border);
+  padding: var(--sp-2) 0 var(--sp-4);
 }
 
 .block {

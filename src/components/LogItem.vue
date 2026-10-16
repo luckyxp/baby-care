@@ -9,6 +9,7 @@ import { abnormalReason, isSleeping, summarizeLog } from '@/domain/log-kinds'
 import { useClock } from '@/composables/useClock'
 import { hm } from '@/utils/time'
 import AuthorTag from './AuthorTag.vue'
+import IconBadge from './IconBadge.vue'
 
 const props = defineProps<{ log: CareLog; notes?: number; focus?: boolean }>()
 defineEmits<{ open: [log: CareLog] }>()
@@ -23,19 +24,19 @@ const pending = computed(() => props.log.seq === 0)
 <template>
   <button type="button" class="item" :class="{ 'item--focus': focus }" @click="$emit('open', log)">
     <div class="time">{{ hm(log.time) }}</div>
-    <div class="icon" :style="{ background: meta.color + '22' }">{{ meta.icon }}</div>
+    <IconBadge class="icon" :name="log.type" />
     <div class="body">
       <div class="summary">
-        <span class="kind" :style="{ color: meta.color }">{{ meta.label }}</span>
         <span :class="{ sleeping: isSleeping(log) }">{{ summary }}</span>
       </div>
       <div v-if="log.note" class="note ellipsis">{{ log.note }}</div>
       <div class="meta">
+        <span>{{ meta.label }}</span>
         <AuthorTag :user-id="log.createdBy" />
-        <span v-if="log.source === 'voice'" class="pill">🎙 语音</span>
-        <span v-if="alert" class="pill pill--danger">⚠️ {{ alert }}</span>
-        <span v-if="notes" class="pill pill--primary">💬 {{ notes }}</span>
-        <span v-if="pending" class="pill pill--warn" title="尚未同步到云端">待同步</span>
+        <span v-if="log.source === 'voice'"><van-icon name="volume-o" /> 语音</span>
+        <span v-if="alert" class="pill pill--danger"><van-icon name="warning-o" /> {{ alert }}</span>
+        <span v-if="notes"><van-icon name="chat-o" /> {{ notes }}</span>
+        <span v-if="pending" class="pill pill--warn">待同步</span>
       </div>
     </div>
   </button>
@@ -72,21 +73,13 @@ const pending = computed(() => props.log.seq === 0)
 
 .time {
   width: 40px;
-  padding-top: 6px;
+  padding-top: 3px;
   font-variant-numeric: tabular-nums;
-  font-weight: 600;
-  color: var(--bc-text-2);
+  font-weight: 400;
+  color: var(--bc-text-3);
 }
 
-.icon {
-  flex: none;
-  display: grid;
-  place-items: center;
-  width: 34px;
-  height: 34px;
-  border-radius: 11px;
-  font-size: 18px;
-}
+.icon { width: 30px; height: 30px; border-radius: 9px; }
 
 .body {
   flex: 1;
@@ -94,7 +87,7 @@ const pending = computed(() => props.log.seq === 0)
 }
 
 .summary {
-  font-size: 15px;
+  font-size: 14px;
   line-height: 1.5;
 }
 
@@ -104,7 +97,7 @@ const pending = computed(() => props.log.seq === 0)
 }
 
 .sleeping {
-  color: #8e7cf3;
+  color: var(--bc-sleep);
   font-weight: 600;
 }
 
@@ -119,5 +112,7 @@ const pending = computed(() => props.log.seq === 0)
   align-items: center;
   gap: 6px;
   margin-top: 4px;
+  color: var(--bc-text-3);
+  font-size: 11px;
 }
 </style>

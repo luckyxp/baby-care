@@ -34,7 +34,7 @@ export interface Stage {
     naps: string
     tip: string
   }
-  /** 默认喂养作息（育儿嫂未自定义时使用） */
+  /** 用于构造各月龄初始日模板的喂养安排 */
   schedule: ScheduleSlot[]
 }
 

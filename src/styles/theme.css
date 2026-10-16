@@ -1,70 +1,94 @@
 /* ============================================================================
- *  设计令牌 · Design Tokens
- * ----------------------------------------------------------------------------
- *  基础色板 --bc-*  →  映射到 Vant 语义变量 --van-*
- *  暗色模式：Vant ConfigProvider 会在 <html> 上挂 .van-theme-dark，这里只需
- *  覆盖基础色板，映射关系自动跟随（同一元素上声明，计算时取暗色值）。
+ * 界面令牌：中性底色承载内容，强调色只用于主操作，记录类型使用独立语义色。
  * ========================================================================== */
-
 :root {
-  /* ── 品牌 ── */
-  --bc-primary: #ff7e67;
-  --bc-primary-dark: #ef6750;
-  --bc-primary-soft: #ffede8;
-  --bc-accent: #2fb893;
-  --bc-accent-soft: #e3f7f1;
-  --bc-warn: #f5a623;
-  --bc-warn-soft: #fff4e0;
-  --bc-danger: #f25f5c;
-  --bc-danger-soft: #ffeceb;
-
-  /* ── 表面 ── */
-  --bc-bg: #fff8f4;
-  --bc-surface: #ffffff;
-  --bc-surface-2: #fff2eb;
-  --bc-border: #f2e4dc;
-
-  /* ── 文字 ── */
-  --bc-text: #2f2724;
-  --bc-text-2: #6f625c;
-  --bc-text-3: #a79a93;
-
-  /* ── 形状与层次 ── */
-  --bc-radius-lg: 20px;
-  --bc-radius: 14px;
-  --bc-radius-sm: 10px;
-  --bc-shadow: 0 6px 20px rgba(173, 108, 84, 0.08);
-  --bc-shadow-lg: 0 14px 36px rgba(173, 108, 84, 0.16);
-
-  /* ── 间距（4px 网格） ── */
+  color-scheme: light;
+  --bc-primary: #d83a53;
+  --bc-primary-dark: #c7354b;
+  --bc-primary-soft: #fff0f2;
+  --bc-on-primary: #fff;
+  --bc-accent: #33836b;
+  --bc-accent-soft: #edf6f1;
+  --bc-warn: #9a691e;
+  --bc-warn-soft: #fcf4e7;
+  --bc-danger: #d64343;
+  --bc-danger-soft: #fff0ef;
+  --bc-sleep: #8072ad;
+  --bc-sleep-soft: #f2eff9;
+  --bc-milk: #b57a37;
+  --bc-milk-soft: #fcf5e9;
+  --bc-blue: #5d91bc;
+  --bc-blue-soft: #edf5fc;
+  --bc-diaper: #ad8a65;
+  --bc-diaper-soft: #f8f2e9;
+  --bc-temp: #b66a70;
+  --bc-temp-soft: #fbeff0;
+  --bc-medicine: #648e85;
+  --bc-medicine-soft: #edf5f2;
+  --bc-growth: #7b8962;
+  --bc-growth-soft: #f1f4eb;
+  --bc-chart: #7f8ca8;
+  --bc-bg: #f7f7f8;
+  --bc-surface: #fff;
+  --bc-surface-2: #f3f3f5;
+  --bc-border: #ededf0;
+  --bc-text: #202126;
+  --bc-text-2: #64656e;
+  --bc-text-3: #85868e;
+  --bc-radius-lg: 16px;
+  --bc-radius: 12px;
+  --bc-radius-sm: 8px;
+  --bc-shadow: 0 1px 3px rgb(20 20 30 / 4%);
+  --bc-shadow-lg: 0 8px 32px rgb(20 20 30 / 12%);
   --sp-1: 4px;
   --sp-2: 8px;
   --sp-3: 12px;
   --sp-4: 16px;
   --sp-5: 20px;
   --sp-6: 24px;
-
   --bc-tabbar-h: 56px;
-  --bc-max-w: 480px;
+  --bc-max-w: 560px;
 }
-
 :root.van-theme-dark {
-  --bc-primary-soft: #3b2722;
-  --bc-accent-soft: #173229;
-  --bc-warn-soft: #3a2d15;
-  --bc-danger-soft: #3d2020;
-  --bc-bg: #151211;
-  --bc-surface: #211c1a;
-  --bc-surface-2: #2a2320;
-  --bc-border: #362e2b;
-  --bc-text: #f1e9e5;
-  --bc-text-2: #bcaea8;
-  --bc-text-3: #85776f;
-  --bc-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
-  --bc-shadow-lg: 0 14px 36px rgba(0, 0, 0, 0.5);
+  color-scheme: dark;
+  --bc-primary: #ff8292;
+  --bc-primary-dark: #ffa2ad;
+  --bc-primary-soft: #342329;
+  --bc-on-primary: #25151a;
+  --bc-accent: #85c6ac;
+  --bc-accent-soft: #20322b;
+  --bc-warn: #e2b771;
+  --bc-warn-soft: #352c20;
+  --bc-danger: #ff9090;
+  --bc-danger-soft: #382427;
+  --bc-sleep: #b6a6e5;
+  --bc-sleep-soft: #2c2839;
+  --bc-milk: #d9b17b;
+  --bc-milk-soft: #332d23;
+  --bc-blue: #92bbdc;
+  --bc-blue-soft: #232e39;
+  --bc-diaper: #c8a780;
+  --bc-diaper-soft: #332d26;
+  --bc-temp: #db9c9f;
+  --bc-temp-soft: #38282d;
+  --bc-medicine: #96beb5;
+  --bc-medicine-soft: #23332f;
+  --bc-growth: #aabb8c;
+  --bc-growth-soft: #2d3327;
+  --bc-chart: #a2b0ce;
+  --bc-bg: #141416;
+  --bc-surface: #202023;
+  --bc-surface-2: #2b2b30;
+  --bc-border: #303035;
+  --bc-text: #f1f1f4;
+  --bc-text-2: #b3b3bc;
+  --bc-text-3: #9696a1;
+  --bc-shadow: none;
+  --bc-shadow-lg: 0 8px 32px rgb(0 0 0 / 35%);
 }
-
-/* ── Vant 语义映射（双重 :root 提升优先级，压过 Vant 自带的暗色变量） ── */
+/* ----------------------------------------------------------------------------
+ * 组件语义映射：常规、行内、微型按钮各有尺寸；点击区域由外层独立保证。
+ * -------------------------------------------------------------------------- */
 :root:root {
   --van-primary-color: var(--bc-primary);
   --van-success-color: var(--bc-accent);
@@ -75,26 +99,50 @@
   --van-text-color-3: var(--bc-text-3);
   --van-background: var(--bc-bg);
   --van-background-2: var(--bc-surface);
-  --van-background-3: var(--bc-surface);
+  --van-background-3: var(--bc-surface-2);
   --van-border-color: var(--bc-border);
   --van-active-color: var(--bc-surface-2);
-  --van-radius-md: 10px;
-  --van-radius-lg: 14px;
-  --van-button-radius: 12px;
+  --van-radius-md: 8px;
+  --van-radius-lg: 12px;
+  --van-font-bold: 600;
+  --van-button-radius: 10px;
+  --van-button-default-height: 46px;
+  --van-button-small-height: 32px;
+  --van-button-small-font-size: 13px;
+  --van-button-mini-height: 28px;
+  --van-button-primary-color: var(--bc-on-primary);
   --van-button-default-background: var(--bc-surface);
   --van-button-default-border-color: var(--bc-border);
-  --van-cell-group-inset-radius: var(--bc-radius);
-  --van-popup-round-radius: 24px;
+  --van-cell-group-inset-radius: var(--bc-radius-lg);
+  --van-popup-round-radius: 20px;
   --van-popup-background: var(--bc-surface);
-  --van-nav-bar-background: var(--bc-bg);
+  --van-overlay-background: rgb(15 15 20 / 42%);
+  --van-nav-bar-background: var(--bc-surface);
   --van-nav-bar-title-font-size: 17px;
+  --van-nav-bar-title-text-color: var(--bc-text);
+  --van-nav-bar-icon-color: var(--bc-text);
+  --van-nav-bar-height: 48px;
+  --van-tabbar-height: var(--bc-tabbar-h);
   --van-tabbar-background: var(--bc-surface);
   --van-tabbar-item-active-background: var(--bc-surface);
-  --van-tabbar-item-active-color: var(--bc-primary);
+  --van-tabbar-item-active-color: var(--bc-text);
+  --van-tabbar-item-text-color: var(--bc-text-3);
+  --van-tabbar-item-icon-size: 23px;
   --van-tabs-bottom-bar-color: var(--bc-primary);
+  --van-tabs-bottom-bar-height: 3px;
+  --van-tabs-bottom-bar-width: 18px;
+  --van-tab-text-color: var(--bc-text-2);
+  --van-tab-active-text-color: var(--bc-text);
+  --van-tabs-nav-background: transparent;
   --van-field-input-text-color: var(--bc-text);
+  --van-search-content-background: var(--bc-surface-2);
   --van-picker-background: var(--bc-surface);
+  --van-picker-confirm-action-color: var(--bc-primary);
   --van-dialog-background: var(--bc-surface);
+  --van-dialog-border-radius: 18px;
   --van-action-sheet-item-background: var(--bc-surface);
+  --van-popover-light-background: var(--bc-surface);
+  --van-popover-light-text-color: var(--bc-text);
   --van-notify-primary-background: var(--bc-primary);
+  --van-circle-layer-color: var(--bc-border);
 }

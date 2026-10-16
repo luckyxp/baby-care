@@ -8,13 +8,14 @@ import { CloudDB } from '@/cloud/db'
 import { CloudServer, type CloudEvent } from '@/cloud/server'
 import { buildReport, mergeBlocks, renderReport } from '@/domain/report'
 import { matchFeeding, recommendPlan } from '@/domain/planner'
+import { STAGES } from '@/library'
 import { summarizeDay } from '@/domain/stats'
 import type { Bus } from '@/utils/bus'
 import { sha256Fallback, sha256Hex } from '@/utils/crypto'
 import { toHex, uid } from '@/utils/id'
 import { ageOf, ageText, atTime } from '@/utils/time'
 import type {
-  AnyEntity, Baby, CareLog, Checkin, EntityName, Mutation, PlanTask, SessionInfo,
+  AnyEntity, Baby, CareLog, Checkin, EntityName, Mutation, PlanTask, PlanTemplate, SessionInfo,
 } from '@/shared/types'
 
 /* ── 工具 ───────────────────────────────────────────────────────────────── */
@@ -141,6 +142,59 @@ describe('cloud server', () => {
     expect((await server.push(nanny.token, [put('checkins', checkin(eveTask))])).results[0]).toMatchObject({ ok: false, code: 'INVALID' })
   })
 
+  it('首次同步把各月龄模板存入家庭，并发或重复同步不重复添加', async () => {
+    const rows = await server.db.entity('dailyTemplates').where('familyId').equals(nanny.family!.id).toArray()
+    expect(rows).toHaveLength(STAGES.length)
+    expect(rows.every((template) => template.babyId === baby.id && template.createdBy === nanny.user.id)).toBe(true)
+    expect(new Set(rows.map((template) => template.name))).toEqual(new Set(STAGES.map((stage) => `${stage.range} · ${stage.title}`)))
+    const [a, b] = await Promise.all([server.pull(nanny.token, 0), server.pull(mom.token, 0)])
+    expect(a.cursor).toBe(b.cursor)
+    expect(await server.db.entity('dailyTemplates').count()).toBe(STAGES.length)
+    expect(b.changes.filter((change) => change.entity === 'dailyTemplates')).toHaveLength(STAGES.length)
+  })
+
+  it('修改和删除初始模板后，刷新、重建服务与重新登录均不恢复', async () => {
+    const templates = await server.db.entity('dailyTemplates').where('familyId').equals(nanny.family!.id).toArray()
+    const [first, ...rest] = templates
+    const edited = { ...first, name: '我的宝宝专属安排', tasks: [{ ...first.tasks[0], slot: 'day' as const, time: '08:00', amount: 190 }] }
+    const result = await server.push(nanny.token, [put('dailyTemplates', edited), ...rest.map((template) => del('dailyTemplates', template.id))])
+    expect(result.results.every((item) => item.ok)).toBe(true)
+    const reopened = new CloudServer(server.db, silentBus)
+    const login = await reopened.login({ phone: '13800000001', password: '123456' })
+    const pulled = await reopened.pull(login.token, 0)
+    const active = pulled.changes.filter((change) => change.entity === 'dailyTemplates' && !change.record.deleted)
+    expect(active.map((change) => change.record)).toMatchObject([{ id: first.id, name: edited.name, tasks: edited.tasks }])
+    await reopened.push(login.token, [del('dailyTemplates', first.id)])
+    const empty = await reopened.pull(login.token, 0)
+    expect(empty.changes.filter((change) => change.entity === 'dailyTemplates' && !change.record.deleted)).toHaveLength(0)
+    expect(await reopened.db.entity('dailyTemplates').count()).toBe(STAGES.length)
+  })
+
+  it('各家庭拥有独立的初始模板，不会读取其他家庭的模板', async () => {
+    const account = { phone: '13800000003', password: '123456', nickname: '李阿姨' }
+    const user = await server.register(account)
+    const family = await server.createFamily(user.token, {
+      name: '小豆包', gender: 'boy', birthday: '2026-05-01', feedingMode: 'formula', birthWeight: null, birthHeight: null, allergies: '',
+    })
+    const [pulled, concurrent] = await Promise.all([server.pull(family.token, 0), server.pull(family.token, 0)])
+    expect(pulled.cursor).toBe(concurrent.cursor)
+    const templates = pulled.changes.filter((change) => change.entity === 'dailyTemplates')
+    expect(templates).toHaveLength(STAGES.length)
+    expect(templates.every((change) => change.record.familyId === family.family!.id && (change.record as PlanTemplate).babyId !== baby.id)).toBe(true)
+    expect(await server.db.entity('dailyTemplates').count()).toBe(STAGES.length * 2)
+  })
+
+  it('日模板可同步共享，家长只读，云端拒绝无效任务内容', async () => {
+    const template: PlanTemplate = {
+      ...envelope(nanny), id: uid(), babyId: baby.id, name: '日常照护',
+      tasks: [{ kind: 'feeding', category: 'milk', slot: 'day', title: '晨奶', time: '07:00', amount: 180, desc: '', steps: [], sourceId: null, order: 1 }],
+    }
+    expect((await server.push(nanny.token, [put('dailyTemplates', template)])).results[0].ok).toBe(true)
+    expect((await server.pull(mom.token, 0)).changes.some((change) => change.entity === 'dailyTemplates' && change.record.id === template.id)).toBe(true)
+    expect((await server.push(mom.token, [put('dailyTemplates', { ...template, name: '越权修改' })])).results[0]).toMatchObject({ ok: false, code: 'FORBIDDEN' })
+    expect((await server.push(nanny.token, [put('dailyTemplates', { ...template, tasks: [{ ...template.tasks[0], time: '25:00' }] })])).results[0]).toMatchObject({ ok: false, code: 'INVALID' })
+  })
+
   it('可见性：家长看不到邀请码，消息只推给接收人', async () => {
     await server.push(nanny.token, [put('logs', milkLog(nanny, baby.id, Date.now()))])
     const momView = await server.pull(mom.token, 0)
@@ -179,7 +233,7 @@ describe('planner & report', () => {
   const baby: Baby = {
     id: 'b1', familyId: 'f1', createdBy: 'u1', createdAt: 0, updatedBy: 'u1', updatedAt: 0, deleted: 0, seq: 1,
     name: '小米粒', gender: 'girl', birthday: '2026-02-20', feedingMode: 'mixed', birthWeight: null, birthHeight: null,
-    allergies: '', avatar: '', schedule: null,
+    allergies: '', avatar: '',
   }
 
   it('同一天生成结果稳定，相邻两天自然错开', () => {

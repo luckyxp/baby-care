@@ -67,42 +67,12 @@ const quick = (min: number) => {
 </template>
 
 <style scoped>
-.tf {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--sp-2);
-}
-
-.tf-value {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  height: 36px;
-  padding: 0 14px;
-  border: 1px solid var(--bc-primary);
-  border-radius: 999px;
-  background: var(--bc-primary-soft);
-  color: var(--bc-primary-dark);
-  font-weight: 600;
-  font-size: 15px;
-  cursor: pointer;
-}
-
-.tf-value:disabled {
-  border-color: var(--bc-border);
-  background: var(--bc-surface-2);
-  color: var(--bc-text);
-}
-
-.tf-quick {
-  height: 30px;
-  padding: 0 10px;
-  border: 0;
-  border-radius: 999px;
-  background: var(--bc-surface-2);
-  color: var(--bc-text-2);
-  font-size: 12px;
-  cursor: pointer;
-}
+.tf { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; }
+.tf-value, .tf-quick { position: relative; display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 44px; padding: 0 10px; border: 0; border-radius: 8px; background: transparent; cursor: pointer; }
+.tf-value { isolation: isolate; padding-inline: 12px; color: var(--bc-text); font-size: 16px; font-variant-numeric: tabular-nums; font-weight: 500; }
+.tf-value::before { content: ''; position: absolute; z-index: -1; inset: 4px 0; border-radius: 8px; background: var(--bc-surface-2); }
+.tf-value .van-icon { color: var(--bc-text-3); }
+.tf-quick { font-size: 12px; color: var(--bc-text-2); }
+.tf-quick:active { background: var(--bc-surface-2); }
+.tf-value:disabled { cursor: default; }
 </style>

@@ -41,7 +41,7 @@ const counts = computed(() => {
 
 const filterOptions = computed(() => [
   { value: 'all' as const, label: `全部 ${day.dayLogs.value.length}` },
-  ...LOG_TYPES.filter((t) => counts.value.get(t)).map((t) => ({ value: t, label: `${LOG_KINDS[t].label} ${counts.value.get(t)}`, icon: LOG_KINDS[t].icon })),
+  ...LOG_TYPES.filter((t) => counts.value.get(t)).map((t) => ({ value: t, label: `${LOG_KINDS[t].label} ${counts.value.get(t)}` })),
 ])
 
 const list = computed(() =>
@@ -80,17 +80,17 @@ watch(
 <template>
   <div class="page">
     <PageNav>
-      <template #right><van-icon name="volume-o" size="20" @click="voice = true" /></template>
+      <template #right><button type="button" class="icon-button" aria-label="语音记录" @click="voice = true"><van-icon name="volume-o" size="20" /></button></template>
     </PageNav>
 
     <div class="page-body">
       <div class="bar"><DateBar v-model="date" /></div>
 
       <div class="card sum">
-        <span>🍼 <b>{{ summary.milkMl }}</b>ml / {{ summary.bottleCount + summary.breastCount }}次</span>
-        <span>🥣 <b>{{ summary.solidCount }}</b>次</span>
-        <span>😴 <b>{{ fmtDuration(summary.sleepMin) }}</b></span>
-        <span>💩 <b>{{ summary.poop }}</b> · 💧<b>{{ summary.pee }}</b></span>
+        <span>奶量 <b>{{ summary.milkMl }}</b>ml</span>
+        <span>辅食 <b>{{ summary.solidCount }}</b>次</span>
+        <span>睡眠 <b>{{ fmtDuration(summary.sleepMin) }}</b></span>
+        <span>大/小便 <b>{{ summary.poop }}/{{ summary.pee }}</b></span>
       </div>
 
       <div class="filters">
@@ -139,7 +139,7 @@ watch(
 }
 
 .filters :deep(.chip) {
-  min-height: 30px;
+  min-height: 44px;
   font-size: 13px;
   padding: 0 10px;
 }
@@ -158,9 +158,9 @@ watch(
   width: 56px;
   height: 56px;
   border: 0;
-  border-radius: 50%;
+  border-radius: 16px;
   background: var(--bc-primary);
-  color: #fff;
+  color: var(--bc-on-primary);
   box-shadow: var(--bc-shadow-lg);
   cursor: pointer;
 }

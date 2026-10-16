@@ -48,12 +48,12 @@ const selecting = ref('')
 
 const categoryOptions = [
   { value: 'all' as const, label: '全部领域' },
-  ...EDU_KEYS.map((k) => ({ value: k, label: EDU_CATEGORIES[k].label, icon: EDU_CATEGORIES[k].icon })),
+  ...EDU_KEYS.map((k) => ({ value: k, label: EDU_CATEGORIES[k].label })),
 ]
 const slotOptions = [
   { value: 'all' as const, label: '全部时段' },
-  { value: 'day' as const, label: '☀️ 日间' },
-  { value: 'evening' as const, label: '🌙 晚间' },
+  { value: 'day' as const, label: '日间' },
+  { value: 'evening' as const, label: '晚间' },
 ]
 const targetOptions = slotOptions.filter((s) => s.value !== 'all')
 const matches = (text: string) => text.toLowerCase().includes(search.value.trim().toLowerCase())
@@ -114,43 +114,42 @@ async function pick(item: LibraryPick) {
         <div v-if="tab !== 'feeding'" class="row slot-select">
           <span>加入时段</span><ChipGroup v-model="targetSlot" :options="targetOptions" />
         </div>
-        <small>日间由育儿嫂安排，晚间互动留给爸爸妈妈。食谱加入后可编辑用餐时间。</small>
       </div>
       <div class="age-filter row row--between">
         <span>宝宝 {{ ageText(age) }}</span>
-        <label class="row"><span>全部月龄</span><van-switch v-model="allAges" size="22px" /></label>
+        <label class="row"><span>全部月龄</span><van-switch v-model="allAges" size="18px" /></label>
       </div>
       <van-search v-model="search" placeholder="搜索活动、食材或食谱" shape="round" background="transparent" />
       <van-tabs v-model:active="tab" shrink animated>
         <van-tab name="edu" title="早教">
-          <div class="filter"><ChipGroup v-model="category" :options="categoryOptions" /></div>
-          <p class="count muted">{{ eduItems.length }} 项活动 · 点击卡片查看步骤与观察要点</p>
-          <LibraryCard
+          <div class="filter"><ChipGroup v-model="category" :options="categoryOptions" scroll /></div>
+          <p class="count muted">{{ eduItems.length }} 项活动</p>
+          <div v-if="eduItems.length" class="list-panel"><LibraryCard
             v-for="item in eduItems" :key="item.id" :item="item" :picking="picking"
             :loading="busy && selecting === item.id" :added="added.has(item.id)" @pick="pick"
-          />
+          /></div>
           <van-empty v-if="!eduItems.length" image-size="80" description="没有匹配的活动，可切换月龄范围或搜索词" />
         </van-tab>
         <van-tab name="interaction" title="亲子互动">
-          <div class="filter"><ChipGroup v-model="interactionSlot" :options="slotOptions" /></div>
-          <p class="count muted">{{ interactionItems.length }} 项互动 · 陪伴比完成任务更重要</p>
-          <LibraryCard
+          <div class="filter"><ChipGroup v-model="interactionSlot" :options="slotOptions" scroll /></div>
+          <p class="count muted">{{ interactionItems.length }} 项互动</p>
+          <div v-if="interactionItems.length" class="list-panel"><LibraryCard
             v-for="item in interactionItems" :key="item.id" :item="item" :picking="picking"
             :loading="busy && selecting === item.id" :added="added.has(item.id)" @pick="pick"
-          />
+          /></div>
           <van-empty v-if="!interactionItems.length" image-size="80" description="没有匹配的互动，可切换月龄范围或搜索词" />
         </van-tab>
         <van-tab name="feeding" title="喂养">
           <div class="feeding-top"><StagePanel :stage="stage" :age-text="ageText(age)" /></div>
           <div class="card">
             <button type="button" class="section-toggle" :aria-expanded="showPrinciples" @click="showPrinciples = !showPrinciples">
-              <strong>🥣 喂养原则</strong><van-icon :name="showPrinciples ? 'arrow-up' : 'arrow-down'" />
+              <strong>喂养原则</strong><van-icon :name="showPrinciples ? 'arrow-up' : 'arrow-down'" />
             </button>
             <ol v-if="showPrinciples" class="principles"><li v-for="p in FEEDING_PRINCIPLES" :key="p">{{ p }}</li></ol>
           </div>
           <div class="card">
             <button type="button" class="section-toggle" :aria-expanded="showFoods" @click="showFoods = !showFoods">
-              <strong>🥕 食材库 <small>{{ FOODS.length }} 种</small></strong><van-icon :name="showFoods ? 'arrow-up' : 'arrow-down'" />
+              <strong>食材库 <small>{{ FOODS.length }} 种</small></strong><van-icon :name="showFoods ? 'arrow-up' : 'arrow-down'" />
             </button>
             <template v-if="showFoods">
               <p class="count muted">标「敏」为常见过敏原；灰色食材尚未到推荐月龄。点击查看处理方式。</p>
@@ -174,14 +173,14 @@ async function pick(item: LibraryPick) {
             </template>
           </div>
           <div class="section-title">月龄食谱 <small class="muted">{{ recipes.length }} 道</small></div>
-          <LibraryCard
+          <div v-if="recipes.length" class="list-panel"><LibraryCard
             v-for="item in recipes" :key="item.id" :item="item" :picking="picking"
             :loading="busy && selecting === item.id" :added="added.has(item.id)" @pick="pick"
-          />
+          /></div>
           <van-empty v-if="!recipes.length" image-size="80" :description="age.monthsFloat < 6 && !allAges ? '当前月龄以奶为主，满6月龄后再逐步添加辅食' : '没有匹配的食谱'" />
         </van-tab>
         <van-tab name="care" title="护理知识">
-          <p class="count muted">{{ careGuides.length }} 条与当前月龄匹配的日常照护要点</p>
+          <p class="count muted">{{ careGuides.length }} 条护理知识</p>
           <article v-for="guide in careGuides" :key="guide.id" class="card guide">
             <button type="button" class="section-toggle" :aria-expanded="openGuide === guide.id" @click="openGuide = openGuide === guide.id ? '' : guide.id">
               <span><small class="guide-category">{{ GUIDE_CATEGORY[guide.category] }}</small><strong>{{ guide.title }}</strong></span>
@@ -193,12 +192,17 @@ async function pick(item: LibraryPick) {
           <van-empty v-if="!careGuides.length" image-size="80" description="没有匹配的护理知识" />
         </van-tab>
       </van-tabs>
-      <p class="disclaimer">素材供日常照护参考，不是医学诊断或必须达标的清单。尊重宝宝状态，活动全程有人照看，喂养及发育疑问请咨询儿保医生。</p>
+      <details class="reference-note"><summary>使用须知</summary><p>素材供日常照护参考。尊重宝宝状态，活动全程有人照看，喂养及发育疑问请咨询儿保医生。</p></details>
     </main>
   </div>
 </template>
 
 <style scoped>
+.library-page { background: var(--bc-surface); }
+.library-page :deep(.list-panel) { border-radius: 0; margin-inline: -20px; }
+.library-page :deep(.library-card) { padding-inline: 20px; }
+@media (max-width: 390px) { .library-page :deep(.list-panel) { margin-inline: -16px; } .library-page :deep(.library-card) { padding-inline: 16px; } }
+
 .library-page :deep(.van-tabs__nav) {
   background: transparent;
 }
@@ -221,18 +225,18 @@ async function pick(item: LibraryPick) {
 }
 .filter,
 .feeding-top {
-  margin-top: 16px;
+  margin-top: 8px;
 }
 .count {
   font-size: 12px;
-  margin: 12px 0;
+  margin: 8px 0;
 }
 .section-toggle {
   display: flex;
   justify-content: space-between;
   align-items: center;
   width: 100%;
-  min-height: 36px;
+  min-height: 44px;
   padding: 0;
   border: 0;
   background: none;
@@ -264,7 +268,7 @@ h4 {
   display: flex;
   align-items: center;
   gap: 4px;
-  min-height: 36px;
+  min-height: 44px;
   padding: 4px 10px;
   border: 1px solid var(--bc-border);
   border-radius: 12px;
@@ -321,7 +325,7 @@ h4 {
   font-size: 13px;
   line-height: 1.8;
 }
-.disclaimer {
+.reference-note {
   margin: 24px 0;
   font-size: 12px;
   line-height: 1.8;

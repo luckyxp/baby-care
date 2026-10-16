@@ -1,7 +1,7 @@
 /* ============================================================================
  *  全局基础样式
  * ----------------------------------------------------------------------------
- *  移动优先；桌面端以 480px 居中呈现手机画幅。触控目标 ≥ 44px。
+ *  移动优先；宽屏限制阅读宽度，交互使用至少 44px 的触控区域。
  * ========================================================================== */
 
 *,
@@ -16,18 +16,12 @@ body {
   padding: 0;
   background: var(--bc-bg);
   color: var(--bc-text);
-  font-family: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', 'Helvetica Neue', sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, 'Helvetica Neue', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
   font-size: 14px;
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
   -webkit-tap-highlight-color: transparent;
   -webkit-text-size-adjust: 100%;
-}
-
-@media (min-width: 520px) {
-  body {
-    background: color-mix(in srgb, var(--bc-bg) 70%, var(--bc-primary-soft));
-  }
 }
 
 #app {
@@ -39,18 +33,61 @@ body {
   position: relative;
 }
 
-@media (min-width: 520px) {
-  #app {
-    box-shadow: 0 0 40px rgba(0, 0, 0, 0.08);
-  }
-}
-
 button,
 input,
 textarea {
   font: inherit;
   color: inherit;
 }
+
+button, a, input, textarea, summary {
+  touch-action: manipulation;
+}
+
+button, a {
+  transition: background-color 160ms ease, color 160ms ease, opacity 160ms ease;
+}
+
+button:active, a:active { opacity: .72; }
+button:disabled { cursor: default; }
+:focus-visible { outline: 2px solid var(--bc-primary); outline-offset: 3px; }
+a { color: var(--bc-primary); }
+svg { flex-shrink: 0; }
+
+/* 可见按钮与点击区域分开设置，行内按钮无需占满整行。 */
+.van-button--small, .van-button--mini { position: relative; }
+.van-button--small::after { content: ''; position: absolute; inset: -6px 0; }
+.van-button--mini::after { content: ''; position: absolute; inset: -8px 0; }
+.van-button--default { color: var(--bc-text); }
+.van-button--primary.van-button--plain { background: var(--bc-primary-soft); border-color: transparent; }
+.van-popover__content { box-shadow: var(--bc-shadow-lg); border: 1px solid var(--bc-border); border-radius: 12px; }
+.van-nav-bar::after { border-color: var(--bc-border); }
+.van-nav-bar__left { padding-left: 16px; }
+.van-nav-bar__arrow { font-size: 21px; }
+.van-nav-bar__right { padding-right: 12px; }
+.van-tabs__line { border-radius: 3px; }
+.van-stepper { display: inline-flex; align-items: center; gap: 4px; }
+.van-stepper .van-stepper__minus, .van-stepper .van-stepper__plus { border-radius: 50%; }
+.van-stepper__minus::after, .van-stepper__plus::after { width: 12px; }
+.van-stepper .van-stepper__input { margin: 0; background: transparent; font-variant-numeric: tabular-nums; }
+.van-popup--bottom:not(.van-popover) { max-width: var(--bc-max-w); left: 0; right: 0; margin-inline: auto; }
+.van-dialog__header { padding-top: 24px; }
+.van-action-sheet__header { font-size: 15px; }
+.van-calendar__confirm { border-radius: 12px; }
+.van-calendar__day--multiple-middle { color: var(--bc-on-primary); }
+.van-button--small { padding: 0 14px; }
+.van-button--mini { padding: 0 10px; }
+.van-button--plain { background: transparent; }
+.page .van-search, .app-sheet .van-search { padding: 8px 0 16px; }
+.van-search .van-search__content { border-radius: 10px; }
+.van-search .van-cell { padding: 4px 0 4px 8px; }
+.van-empty { padding: 36px 0; }
+.van-empty__description { color: var(--bc-text-3); font-size: 13px; }
+.van-cell { line-height: 24px; }
+.van-badge { background: var(--bc-danger); }
+.van-popup.van-action-sheet,
+.van-popup.van-calendar__popup { width: min(100%, var(--bc-max-w)); left: 0; right: 0; margin-inline: auto; }
+.van-switch::before { content: ''; position: absolute; inset: -10px 0; }
 
 /* ── 页面骨架 ─────────────────────────────────────────────────────────── */
 
@@ -65,8 +102,17 @@ textarea {
 }
 
 .page-body {
-  padding: 0 var(--sp-4);
+  padding: 0 var(--sp-5);
 }
+
+.page-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 28px 0 20px; }
+.page-heading h1 { margin: 0; font-size: 22px; line-height: 1.35; font-weight: 600; letter-spacing: -.5px; }
+.page-heading p { margin: 6px 0 0; font-size: 13px; color: var(--bc-text-3); }
+.icon-button { display: inline-grid; place-items: center; width: 44px; min-height: 44px; padding: 0; border: 0; border-radius: 8px; background: transparent; color: var(--bc-text-2); cursor: pointer; }
+.icon-button:active { background: var(--bc-surface-2); opacity: 1; }
+@media (hover: hover) { .icon-button:hover { background: var(--bc-surface-2); } }
+.list-panel { overflow: hidden; border-radius: var(--bc-radius-lg); background: var(--bc-surface); }
+.list-panel > * + * { border-top: 1px solid var(--bc-border); }
 
 /* 固定定位元素（悬浮按钮、底栏）与 #app 同宽居中 */
 .fixed-center {
@@ -82,7 +128,7 @@ textarea {
 .card {
   background: var(--bc-surface);
   border-radius: var(--bc-radius-lg);
-  box-shadow: var(--bc-shadow);
+  border: 0;
   padding: var(--sp-4);
   margin-bottom: var(--sp-3);
 }
@@ -112,7 +158,8 @@ textarea {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin: var(--sp-5) var(--sp-1) var(--sp-2);
+  gap: 12px;
+  margin: var(--sp-6) 0 var(--sp-3);
   font-size: 15px;
   font-weight: 600;
   color: var(--bc-text);
@@ -134,12 +181,14 @@ textarea {
 }
 
 .link {
-  color: var(--bc-primary);
+  color: var(--bc-text-2);
   cursor: pointer;
   background: none;
   border: 0;
   padding: 0;
 }
+
+button.link, a.link { display: inline-flex; align-items: center; gap: 4px; min-height: 44px; text-decoration: none; }
 
 .row {
   display: flex;
@@ -167,7 +216,7 @@ textarea {
   align-items: center;
   gap: 4px;
   padding: 2px 8px;
-  border-radius: 999px;
+  border-radius: 5px;
   font-size: 12px;
   line-height: 18px;
   background: var(--bc-surface-2);
@@ -205,43 +254,14 @@ textarea {
   margin-top: 0;
 }
 
-.sheet {
-  padding: var(--sp-4) var(--sp-4) calc(var(--sp-4) + env(safe-area-inset-bottom));
-  max-height: 88vh;
-  overflow-y: auto;
-  -webkit-overflow-scrolling: touch;
-}
-
-.sheet-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: var(--sp-3);
-}
-
-.sheet-title {
-  font-size: 17px;
-  font-weight: 600;
-}
-
-.sheet-actions {
-  display: flex;
-  gap: var(--sp-3);
-  margin-top: var(--sp-5);
-}
-
-.sheet-actions > * {
-  flex: 1;
-}
-
 .textarea {
   width: 100%;
   min-height: 72px;
   padding: var(--sp-3);
-  border: 1px solid var(--bc-border);
+  border: 1px solid transparent;
   border-radius: var(--bc-radius-sm);
-  background: var(--bc-surface);
-  resize: vertical;
+  background: var(--bc-surface-2);
+  resize: none;
   outline: none;
   line-height: 1.6;
 }
@@ -250,9 +270,33 @@ textarea {
   border-color: var(--bc-primary);
 }
 
+@media (max-width: 390px) {
+  .page-body { padding-left: var(--sp-4); padding-right: var(--sp-4); }
+}
+
+@media (min-width: 768px) {
+  .page-body { padding-left: var(--sp-6); padding-right: var(--sp-6); }
+}
+
 @media (prefers-reduced-motion: reduce) {
   * {
     animation-duration: 0.01ms !important;
     transition-duration: 0.01ms !important;
   }
 }
+
+.nav-action { display: inline-flex; gap: 4px; align-items: center; justify-content: center; min-width: 56px; min-height: 44px; padding: 0 4px; border: 0; background: transparent; color: var(--bc-text); font-size: 14px; font-weight: 500; cursor: pointer; }
+.nav-action--primary { color: var(--bc-primary); }
+.nav-action:disabled { opacity: .35; }
+.form-section + .form-section { margin-top: 24px; }
+.form-section .form-label { margin-top: 0; margin-bottom: 6px; }
+.form-section .form-label small { font-weight: 400; color: var(--bc-text-3); }
+.form-section .van-field { background: var(--bc-surface-2); border-radius: 10px; padding: 12px; }
+.form-section .van-field::after { display: none; }
+.form-section .textarea { display: block; font-size: 14px; }
+
+/* 44px 实际按钮内绘制 32px 圆形，保留单手操作所需点击区域。 */
+.van-stepper .van-stepper__minus, .van-stepper .van-stepper__plus { width: 44px !important; height: 44px !important; background: radial-gradient(circle at center, var(--bc-surface-2) 16px, transparent 16.5px); }
+.van-stepper .van-stepper__minus::before, .van-stepper .van-stepper__plus::before { width: 12px; height: 1.5px; }
+.van-stepper .van-stepper__plus::after { height: 12px; width: 1.5px; }
+.van-stepper .van-stepper__minus--disabled, .van-stepper .van-stepper__plus--disabled { opacity: .35; }

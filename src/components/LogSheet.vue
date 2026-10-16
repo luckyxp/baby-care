@@ -22,6 +22,7 @@ import { useAction } from '@/composables/useAction'
 import { addLog, editLog, removeLog, type LogInput } from '@/services/logs'
 import { ageOf, fmtDuration, hm } from '@/utils/time'
 import AuthorTag from './AuthorTag.vue'
+import AppSheet from './AppSheet.vue'
 import ChipGroup, { type ChipOption } from './ChipGroup.vue'
 import NoteThread from './NoteThread.vue'
 import TimeField from './TimeField.vue'
@@ -221,15 +222,8 @@ async function del() {
 </script>
 
 <template>
-  <van-popup v-model:show="show" position="bottom" round closeable teleport="body" :style="{ maxWidth: 'var(--bc-max-w)', left: '50%', transform: 'translateX(-50%)' }">
-    <div class="sheet">
-      <div class="sheet-head">
-        <div class="sheet-title">
-          <span class="kind-icon" :style="{ background: kind.color + '22' }">{{ kind.icon }}</span>
-          {{ readonly ? '' : editing ? '编辑' : '记录' }}{{ kind.label }}
-        </div>
-      </div>
-
+  <AppSheet v-model:show="show" :title="`${readonly ? '' : editing ? '编辑' : '记录'}${kind.label}`" :confirm-text="readonly ? undefined : '保存'" :busy="busy" @confirm="save">
+    <div class="log-form">
       <!-- ── 只读查看（家长查看育儿嫂录入） ── -->
       <template v-if="readonly && log">
         <div class="card card--flat">
@@ -238,7 +232,7 @@ async function del() {
             <AuthorTag :user-id="log.createdBy" suffix="记录" />
           </div>
           <div class="preview">{{ preview }}</div>
-          <div v-if="alert" class="pill pill--danger">⚠️ {{ alert }}</div>
+          <div v-if="alert" class="pill pill--danger">{{ alert }}</div>
           <div v-if="log.note" class="text-2">{{ log.note }}</div>
           <p class="muted tip">育儿嫂录入的内容仅育儿嫂可修改，你可以在下方补充备注。</p>
         </div>
@@ -247,7 +241,7 @@ async function del() {
       <!-- ── 表单 ── -->
       <template v-else>
         <div v-if="!editing && !preset?.type && !type" class="type-switch">
-          <ChipGroup v-model="form.type" :options="LOG_TYPES.map((t) => ({ value: t, label: LOG_KINDS[t].label, icon: LOG_KINDS[t].icon }))" @update:model-value="(t) => init(t as LogType)" />
+          <ChipGroup v-model="form.type" :options="LOG_TYPES.map((t) => ({ value: t, label: LOG_KINDS[t].label, symbol: t }))" @update:model-value="(t) => init(t as LogType)" />
         </div>
 
         <div class="form-label">{{ form.type === 'sleep' ? '入睡时间' : '时间' }}</div>
@@ -260,16 +254,16 @@ async function del() {
           <template v-if="milk.mode !== 'breast'">
             <div class="form-label">奶量（ml）</div>
             <div class="big-stepper">
-              <van-stepper :model-value="milk.amount ?? 120" @update:model-value="(v) => (milk.amount = Number(v))" :min="5" :max="400" :step="10" integer input-width="72px" button-size="40px" />
+              <van-stepper :model-value="milk.amount ?? 120" @update:model-value="(v) => (milk.amount = Number(v))" :min="5" :max="400" :step="10" integer input-width="72px" button-size="36px" />
             </div>
-            <ChipGroup v-model="milk.amount" :options="MILK_AMOUNTS.map((v) => ({ value: v, label: `${v}` }))" />
+            <ChipGroup scroll v-model="milk.amount" :options="MILK_AMOUNTS.map((v) => ({ value: v, label: `${v}` }))" />
           </template>
           <template v-else>
             <div class="form-label">哺乳侧</div>
             <ChipGroup v-model="milk.side" clearable :options="opts(BREAST_SIDE_LABEL)" />
             <div class="form-label">时长（分钟）</div>
             <div class="big-stepper">
-              <van-stepper :model-value="milk.duration ?? 10" @update:model-value="(v) => (milk.duration = Number(v))" :min="1" :max="90" integer input-width="72px" button-size="40px" />
+              <van-stepper :model-value="milk.duration ?? 10" @update:model-value="(v) => (milk.duration = Number(v))" :min="1" :max="90" integer input-width="72px" button-size="36px" />
             </div>
             <ChipGroup v-model="milk.duration" :options="BREAST_MINUTES.map((v) => ({ value: v, label: `${v}分钟` }))" />
           </template>
@@ -317,7 +311,7 @@ async function del() {
             <label class="row sleeping"><van-switch v-model="form.sleeping" size="20px" /> 还在睡</label>
           </div>
           <TimeField v-if="!form.sleeping && form.endTime !== null" v-model="form.endTime" label="醒来时间" />
-          <div v-else class="muted">保存后首页会显示"正在睡"，醒来时点一下即可结束计时</div>
+          <div v-else class="muted sleep-tip">醒来后可在首页结束计时</div>
           <div v-if="sleepHint" class="pill pill--primary hint">{{ sleepHint }}</div>
           <div class="form-label">睡眠质量</div>
           <ChipGroup v-model="sleep.quality" clearable :options="opts(SLEEP_QUALITY_LABEL)" />
@@ -327,9 +321,9 @@ async function del() {
         <template v-if="form.type === 'temp'">
           <div class="form-label">体温（℃）</div>
           <div class="big-stepper">
-            <van-stepper v-model="temp.value" :min="34" :max="43" :step="0.1" :decimal-length="1" input-width="80px" button-size="40px" />
+            <van-stepper v-model="temp.value" :min="34" :max="43" :step="0.1" :decimal-length="1" input-width="80px" button-size="36px" />
           </div>
-          <ChipGroup v-model="temp.value" :options="TEMP_QUICK.map((v) => ({ value: v, label: v.toFixed(1) }))" />
+          <ChipGroup scroll v-model="temp.value" :options="TEMP_QUICK.map((v) => ({ value: v, label: v.toFixed(1) }))" />
           <div class="form-label">测量方式</div>
           <ChipGroup v-model="temp.method" :options="opts(TEMP_METHOD_LABEL)" />
         </template>
@@ -361,10 +355,7 @@ async function del() {
         <div class="form-label">备注（选填）</div>
         <textarea v-model="form.note" class="textarea" rows="2" maxlength="300" placeholder="宝宝的状态、特别情况…" />
 
-        <div class="sheet-actions">
-          <van-button v-if="editing && log && session.actor && can.editLog(session.actor, log)" round plain type="danger" @click="del">删除</van-button>
-          <van-button round block type="primary" :loading="busy" @click="save">{{ editing ? '保存修改' : '保存' }}</van-button>
-        </div>
+        <button v-if="editing && log && session.actor && can.editLog(session.actor, log)" type="button" class="delete-record" :disabled="busy" @click="del">删除这条记录</button>
       </template>
 
       <!-- ── 备注串（已存在的记录） ── -->
@@ -373,24 +364,14 @@ async function del() {
         <NoteThread target-type="log" :target-id="log.id" :date="log.date" />
       </template>
     </div>
-  </van-popup>
+  </AppSheet>
 </template>
 
 <style scoped>
-.kind-icon {
-  display: inline-grid;
-  place-items: center;
-  width: 32px;
-  height: 32px;
-  margin-right: 6px;
-  border-radius: 10px;
-}
-
-.sheet-title {
-  display: flex;
-  align-items: center;
-}
-
+ .log-form > .form-label { margin-top: 22px; margin-bottom: 6px; }
+.log-form > .form-label:first-child { margin-top: 0; }
+.delete-record { display: block; width: 100%; min-height: 44px; margin-top: 20px; border: 0; background: transparent; color: var(--bc-danger); font-size: 13px; cursor: pointer; }
+.sleep-tip { font-size: 12px; }
 .type-switch {
   margin-bottom: var(--sp-3);
 }
@@ -402,9 +383,9 @@ async function del() {
 }
 
 .big-stepper :deep(.van-stepper__input) {
-  font-size: 22px;
-  font-weight: 700;
-  height: 40px;
+  font-size: 32px;
+  font-weight: 500;
+  height: 48px;
 }
 
 .custom-food {
@@ -416,10 +397,10 @@ async function del() {
 .input {
   flex: 1;
   min-width: 0;
-  height: 34px;
+  height: 44px;
   padding: 0 var(--sp-3);
   border: 1px solid var(--bc-border);
-  border-radius: 999px;
+  border-radius: 8px;
   background: var(--bc-surface);
   outline: none;
 }
@@ -431,10 +412,10 @@ async function del() {
 }
 
 .mini {
-  height: 32px;
+  min-height: 44px;
   padding: 0 12px;
   border: 1px solid var(--bc-border);
-  border-radius: 999px;
+  border-radius: 8px;
   background: var(--bc-surface);
   cursor: pointer;
 }
@@ -456,7 +437,8 @@ async function del() {
 
 .field {
   margin-top: var(--sp-2);
-  border: 1px solid var(--bc-border);
+  border: 0;
+  background: var(--bc-surface-2);
   border-radius: var(--bc-radius-sm);
 }
 

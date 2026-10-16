@@ -68,7 +68,7 @@ export type Gender = 'boy' | 'girl'
 export type FeedingMode = 'breast' | 'formula' | 'mixed'
 export type FeedKind = 'milk' | 'solid' | 'supplement' | 'water'
 
-/** 一条喂养作息：计划模块据此生成每日喂养任务 */
+/** 月龄阶段方案中的一条喂养安排，用于构造初始日模板 */
 export interface ScheduleSlot {
   time: string            // 'HH:mm'
   kind: FeedKind
@@ -85,8 +85,6 @@ export interface Baby extends BaseEntity {
   birthHeight: number | null   // cm
   allergies: string
   avatar: string
-  /** 育儿嫂保存的默认喂养作息；null 表示沿用月龄方案 */
-  schedule: ScheduleSlot[] | null
 }
 
 /* ── 护理日志 ───────────────────────────────────────────────────────────── */
@@ -217,20 +215,10 @@ export interface PlanTask extends BaseEntity {
   order: number
 }
 
-/** 周模板中的一条安排；weekday 采用 0=周日至6=周六。 */
-export interface TemplateTask {
-  weekday: number
-  kind: TaskKind
-  category: FeedKind | EduCategory | null
-  slot: Slot
-  time: string | null
-  title: string
-  desc: string
-  steps: string[]
-  sourceId: string | null
-  amount: number | null
-  order: number
-}
+/** 日模板只描述一天的安排，不携带具体日期、任务身份或完成状态。 */
+export type TemplateTask = Pick<PlanTask,
+  'kind' | 'category' | 'slot' | 'time' | 'title' | 'desc' | 'steps' | 'sourceId' | 'amount' | 'order'
+>
 
 export interface PlanTemplate extends BaseEntity {
   babyId: ID
@@ -300,14 +288,14 @@ export interface EntityMap {
   checkins: Checkin
   reports: Report
   notices: Notice
-  templates: PlanTemplate
+  dailyTemplates: PlanTemplate
 }
 
 export type EntityName = keyof EntityMap
 export type AnyEntity = EntityMap[EntityName]
 
 export const ENTITY_NAMES: readonly EntityName[] = [
-  'members', 'invites', 'babies', 'logs', 'notes', 'plans', 'tasks', 'checkins', 'reports', 'notices', 'templates',
+  'members', 'invites', 'babies', 'logs', 'notes', 'plans', 'tasks', 'checkins', 'reports', 'notices', 'dailyTemplates',
 ] as const
 
 /* ── 同步协议 ───────────────────────────────────────────────────────────── */

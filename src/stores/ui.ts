@@ -26,7 +26,7 @@ export const useUi = defineStore('ui', () => {
   watch(alertOn, (v) => localStorage.setItem(ALERT_KEY, v ? '1' : '0'))
   watch(
     dark,
-    (v) => document.querySelector('meta[name="theme-color"]')?.setAttribute('content', v ? '#151211' : '#FFF8F4'),
+    (v) => document.querySelector('meta[name="theme-color"]')?.setAttribute('content', v ? '#141416' : '#f7f7f8'),
     { immediate: true },
   )
 

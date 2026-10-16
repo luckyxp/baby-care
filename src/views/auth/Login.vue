@@ -7,7 +7,7 @@
 <script setup lang="ts">
 import { computed, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { RELATION_AVATAR, RELATION_LABEL } from '@/shared/constants'
+import { RELATION_LABEL } from '@/shared/constants'
 import { DEMO_ACCOUNTS, ensureDemo, type DemoAccount } from '@/cloud/demo'
 import { useSession } from '@/stores/session'
 import { useAction } from '@/composables/useAction'
@@ -60,12 +60,12 @@ async function tryDemo(a: DemoAccount) {
     <header class="hero">
       <img class="logo" :src="LOGO" alt="" />
       <h1>宝宝护理</h1>
-      <p>育儿嫂 × 爸爸 × 妈妈 · 三方实时协同</p>
+      <p>家庭协同 · 每日照护</p>
     </header>
 
     <div class="page-body">
       <div class="card">
-        <div v-if="inviting" class="pill pill--primary invite-tip">📨 你收到了家庭邀请，登录或注册后即可加入</div>
+        <div v-if="inviting" class="pill pill--primary invite-tip">登录或注册后加入家庭</div>
         <van-tabs v-model:active="mode" shrink>
           <van-tab title="登录" name="login" />
           <van-tab title="注册" name="register" />
@@ -78,13 +78,10 @@ async function tryDemo(a: DemoAccount) {
             {{ mode === 'login' ? '登录' : '注册' }}
           </van-button>
         </van-form>
-        <p class="muted small">
-          育儿嫂注册后创建宝宝档案，再生成邀请码邀请爸爸妈妈加入。
-        </p>
       </div>
 
       <div class="card demo">
-        <div class="card-title">一键体验 <small>本地生成一周演示数据</small></div>
+        <div class="card-title">体验演示 <small>选择身份</small></div>
         <div class="demo-grid">
           <button
             v-for="a in DEMO_ACCOUNTS"
@@ -94,25 +91,22 @@ async function tryDemo(a: DemoAccount) {
             :disabled="!!demoBusy"
             @click="tryDemo(a)"
           >
-            <span class="demo-avatar">{{ RELATION_AVATAR[a.relation] }}</span>
+            <span class="demo-avatar"><van-icon name="user-o" size="24" /></span>
             <strong>{{ RELATION_LABEL[a.relation] }}</strong>
             <small>{{ a.nickname }}</small>
             <van-loading v-if="demoBusy === a.relation" size="16" />
           </button>
         </div>
-        <p class="muted small">
-          💡 在浏览器另开一个标签页，以另一个身份登录，一边记录一边看另一边实时收到更新和消息。
-        </p>
       </div>
 
-      <p class="muted small center">数据保存在本机浏览器，仅本家庭成员可见</p>
+      <p class="muted small center">数据仅保存在当前浏览器</p>
     </div>
   </div>
 </template>
 
 <style scoped>
 .login {
-  background: linear-gradient(180deg, var(--bc-primary-soft) 0%, var(--bc-bg) 280px);
+  background: var(--bc-bg);
 }
 
 .hero {
@@ -121,10 +115,9 @@ async function tryDemo(a: DemoAccount) {
 }
 
 .logo {
-  width: 72px;
-  height: 72px;
-  border-radius: 22px;
-  box-shadow: var(--bc-shadow-lg);
+  width: 52px;
+  height: 52px;
+  border-radius: 14px;
 }
 
 .hero h1 {
@@ -187,6 +180,7 @@ async function tryDemo(a: DemoAccount) {
 }
 
 .demo-avatar {
-  font-size: 28px;
+  padding: 8px 0;
+  color: var(--bc-text-2);
 }
 </style>

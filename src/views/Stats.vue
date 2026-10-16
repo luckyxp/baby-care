@@ -61,8 +61,8 @@ const sleepBars = computed(() => summary.value.perDay.map((d) => ({
   key: d.date, label: dayjs(d.date).format('D日'), value: Math.round(d.sleepMin / 6) / 10, highlight: d.date === today.value,
 })))
 const interactions = computed(() => [
-  { title: '日间亲子', icon: '☀️', ratio: summary.value.edu.day },
-  { title: '晚间亲子 · 留给父母', icon: '🌙', ratio: summary.value.edu.evening },
+  { title: '日间亲子', ratio: summary.value.edu.day },
+  { title: '晚间亲子', ratio: summary.value.edu.evening },
 ])
 const canNext = computed(() => range.value.end < today.value)
 const lower = computed(() => session.baby?.birthday ?? shiftDate(today.value, -365))
@@ -94,20 +94,20 @@ const names = (list: (typeof EDU_KEYS)[number][]) => list.map((k) => EDU_CATEGOR
         <strong>{{ rangeLabel(mode, range) }}</strong>
         <button aria-label="下个区间" :disabled="!canNext" @click="move(1)"><van-icon name="arrow" /></button>
       </div>
-      <p class="caption">{{ mode === 'day' ? '仅汇总已记录信息，不用于判断宝宝健康状况。' : `已记录 ${summary.activeDays} 天；奶量日均按有护理记录天数计算，睡眠日均按有睡眠记录天数计算。` }}</p>
+      <p v-if="mode !== 'day'" class="caption">已记录 {{ summary.activeDays }} 天</p>
     </header>
 
     <main class="page-body">
       <van-empty v-if="!session.baby" description="请先创建宝宝档案" />
       <template v-else>
         <section v-if="mode === 'day'" class="card">
-          <h2 class="card-title">今天的节奏 <small>24 小时记录分布</small></h2>
+          <h2 class="card-title">一天的节奏 <small>24 小时</small></h2>
           <DayTimeline :date="anchor" :logs="logs" :now="now" />
           <p v-if="!summary.activeDays && !totals.sleepMin" class="empty-label">这个日期还没有护理记录</p>
         </section>
 
         <section class="card">
-          <h2 class="card-title">🍼 喂养 <small>瓶喂奶量与亲喂时长分开统计</small></h2>
+          <h2 class="card-title">喂养</h2>
           <div class="metrics">
             <div><span>{{ mode === 'day' ? '瓶喂总量' : '日均瓶喂量' }}</span><strong>{{ hasMilk ? (mode === 'day' ? totals.milkMl : summary.averages.milkMl) : '未记录' }}<small v-if="hasMilk"> ml</small></strong></div>
             <div><span>喂奶记录</span><strong>{{ hasMilk ? totals.bottleCount + totals.breastCount : '未记录' }}<small v-if="hasMilk"> 次</small></strong></div>
@@ -119,12 +119,11 @@ const names = (list: (typeof EDU_KEYS)[number][]) => list.map((k) => EDU_CATEGOR
           <template v-if="summary.foods.length">
             <p class="form-label">这段时间吃过</p>
             <div class="foods"><span v-for="f in summary.foods" :key="f" class="pill">{{ f }}<small v-if="summary.newFoods.includes(f)"> · 首次记录</small></span></div>
-            <p class="caption">“首次记录”仅指本应用内此前未记录过该食材。</p>
           </template>
         </section>
 
         <section class="card">
-          <h2 class="card-title">😴 睡眠 <small>跨夜睡眠按自然日拆分</small></h2>
+          <h2 class="card-title">睡眠</h2>
           <div class="metrics two">
             <div><span>{{ mode === 'day' ? '当日记录时长' : '日均记录时长' }}</span><strong>{{ totals.sleepMin ? fmtDuration(mode === 'day' ? totals.sleepMin : summary.averages.sleepMin) : '未记录' }}</strong></div>
             <div><span>最长一觉</span><strong>{{ summary.longestSleepMin ? fmtDuration(summary.longestSleepMin) : '未记录' }}</strong></div>
@@ -136,34 +135,32 @@ const names = (list: (typeof EDU_KEYS)[number][]) => list.map((k) => EDU_CATEGOR
         <section class="card">
           <h2 class="card-title">护理记录</h2>
           <div class="metrics two">
-            <div><span>💧 小便</span><strong>{{ totals.pee ? `${totals.pee} 次` : '未记录' }}</strong></div>
-            <div><span>💩 大便</span><strong>{{ totals.poop ? `${totals.poop} 次` : '未记录' }}</strong></div>
-            <div><span>🌡️ 最高记录体温</span><strong>{{ totals.tempMax === null ? '未测量' : `${totals.tempMax.toFixed(1)}℃` }}</strong></div>
-            <div><span>💊 用药 / 补剂</span><strong>{{ totals.medicineCount ? `${totals.medicineCount} 次` : '未记录' }}</strong></div>
+            <div><span>小便</span><strong>{{ totals.pee ? `${totals.pee} 次` : '未记录' }}</strong></div>
+            <div><span>大便</span><strong>{{ totals.poop ? `${totals.poop} 次` : '未记录' }}</strong></div>
+            <div><span>最高体温</span><strong>{{ totals.tempMax === null ? '未测量' : `${totals.tempMax.toFixed(1)}℃` }}</strong></div>
+            <div><span>用药 / 补剂</span><strong>{{ totals.medicineCount ? `${totals.medicineCount} 次` : '未记录' }}</strong></div>
           </div>
           <p v-if="totals.abnormalPoop" class="alert">⚠️ {{ totals.abnormalPoop }} 条排便记录有异常标记，请结合实际情况留意。</p>
           <p v-if="totals.feverCount" class="alert">⚠️ {{ totals.feverCount }} 次测温达到应用提醒阈值；不同测量方式有差异，请遵医嘱评估。</p>
-          <p class="caption">未记录不代表未发生；图表不代替医生诊断。</p>
         </section>
 
         <section class="card">
-          <h2 class="card-title">五大早教领域 <small>早教 + 亲子互动打卡</small></h2>
+          <h2 class="card-title">早教领域</h2>
           <RadarChart :axes="radar" />
           <div class="categories">
             <div v-for="k in EDU_KEYS" :key="k" class="category">
-              <div class="row row--between"><span>{{ EDU_CATEGORIES[k].icon }} {{ EDU_CATEGORIES[k].label }}</span><span>{{ summary.edu.byCategory[k].done }} / {{ summary.edu.byCategory[k].planned }} 次</span></div>
-              <div class="track" :aria-label="`${EDU_CATEGORIES[k].label}完成${percent(summary.edu.byCategory[k])}%`"><i :style="{ width: `${percent(summary.edu.byCategory[k])}%`, background: EDU_CATEGORIES[k].color }" /></div>
+              <div class="row row--between"><span>{{ EDU_CATEGORIES[k].label }}</span><span>{{ summary.edu.byCategory[k].done }} / {{ summary.edu.byCategory[k].planned }} 次</span></div>
+              <div class="track" :aria-label="`${EDU_CATEGORIES[k].label}完成${percent(summary.edu.byCategory[k])}%`"><i :style="{ width: `${percent(summary.edu.byCategory[k])}%` }" /></div>
             </div>
           </div>
           <p v-if="!checkins.length" class="empty-label">暂无活动打卡记录</p>
           <p v-if="mode !== 'day' && ranks.most.length" class="detail">最常练习：{{ names(ranks.most) }}<template v-if="ranks.least.length"><br />可以多陪伴练习：{{ names(ranks.least) }}</template></p>
-          <p class="caption">领域次数用于回顾陪伴活动，不是宝宝能力评分。</p>
         </section>
 
         <section class="card">
           <h2 class="card-title">亲子时光</h2>
           <div v-for="i in interactions" :key="i.title" class="interaction row row--between">
-            <span>{{ i.icon }} {{ i.title }}</span>
+            <span>{{ i.title }}</span>
             <span>{{ i.ratio.done }} / {{ i.ratio.planned }} 项 <small class="muted">{{ i.ratio.planned ? `${percent(i.ratio)}%` : '暂无计划' }}</small></span>
           </div>
         </section>
@@ -178,16 +175,20 @@ const names = (list: (typeof EDU_KEYS)[number][]) => list.map((k) => EDU_CATEGOR
             </table>
           </div>
         </details>
+        <details class="card statistics-info">
+          <summary>统计说明</summary>
+          <p>奶量日均按有护理记录的天数计算，睡眠日均按有睡眠记录的天数计算；跨夜睡眠按自然日拆分。瓶喂量与亲喂时长分别统计。</p>
+          <p>首次记录仅指此前未在应用中记录过的食材；活动次数包含早教和亲子打卡，用于回顾陪伴，不代表能力评分。未记录不代表未发生，图表不用于判断健康状况。</p>
+        </details>
       </template>
     </main>
   </div>
 </template>
 
 <style scoped>
-.stats-page { --chart-ink: #2a78d6; }
-:global(.van-theme-dark) .stats-page { --chart-ink: #3987e5; }
-.header { padding-top: calc(var(--sp-3) + env(safe-area-inset-top)); }
-h1 { margin: 0 0 var(--sp-3); font-size: 22px; }
+.stats-page { --chart-ink: var(--bc-chart); }
+.header { padding-top: calc(24px + env(safe-area-inset-top)); }
+h1 { margin: 0 0 20px; font-size: 22px; font-weight: 600; letter-spacing: -.5px; }
 .filters { display: flex; padding: 4px; gap: 4px; border-radius: 14px; background: var(--bc-surface-2); }
 .filters button { flex: 1; min-height: 40px; border: 0; border-radius: 10px; background: transparent; cursor: pointer; }
 .filters .active { background: var(--bc-surface); box-shadow: var(--bc-shadow); font-weight: 600; }
@@ -198,7 +199,7 @@ h1 { margin: 0 0 var(--sp-3); font-size: 22px; }
 .metrics { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--sp-3); }
 .metrics.two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .metrics span { display: block; font-size: 12px; color: var(--bc-text-2); }
-.metrics strong { display: block; font-size: 19px; margin-top: 4px; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.metrics strong { display: block; font-size: 21px; font-weight: 500; margin-top: 6px; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
 .metrics small { font-size: 12px; font-weight: 400; }
 .detail { font-size: 13px; color: var(--bc-text-2); line-height: 1.7; }
 .foods { display: flex; gap: 6px; flex-wrap: wrap; }
@@ -206,11 +207,13 @@ h1 { margin: 0 0 var(--sp-3); font-size: 22px; }
 .alert { font-size: 13px; padding: var(--sp-2); background: var(--bc-warn-soft); border-radius: 8px; }
 .empty-label { color: var(--bc-text-2); text-align: center; font-size: 13px; }
 .categories { display: grid; gap: var(--sp-3); font-size: 13px; font-variant-numeric: tabular-nums; }
-.track { height: 6px; background: var(--bc-surface-2); border-radius: 4px; margin-top: 6px; }
-.track i { display: block; height: 100%; border-radius: inherit; }
+.track { height: 4px; background: var(--bc-surface-2); border-radius: 4px; margin-top: 8px; }
+.track i { display: block; height: 100%; border-radius: inherit; background: var(--chart-ink); }
 .interaction { min-height: 46px; gap: 12px; font-size: 13px; font-variant-numeric: tabular-nums; }
 .interaction + .interaction { border-top: 1px solid var(--bc-border); }
 .table-card summary { cursor: pointer; min-height: 28px; font-weight: 600; }
+.statistics-info summary { min-height: 24px; cursor: pointer; font-size: 13px; }
+.statistics-info p { color: var(--bc-text-2); font-size: 12px; line-height: 1.8; }
 .table-scroll { overflow-x: auto; }
 table { border-collapse: collapse; width: 100%; font-size: 12px; font-variant-numeric: tabular-nums; }
 th, td { padding: 10px 6px; text-align: right; border-bottom: 1px solid var(--bc-border); white-space: nowrap; }

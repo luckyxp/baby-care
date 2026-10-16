@@ -141,12 +141,12 @@ const view = computed(() => {
   bottom: 2px;
   min-width: 3px;
   border-radius: 7px;
-  background: #8e7cf3;
+  background: var(--bc-sleep);
   opacity: 0.85;
 }
 
 .sleep.ongoing {
-  background: repeating-linear-gradient(45deg, #8e7cf3, #8e7cf3 4px, #b3a7f7 4px, #b3a7f7 8px);
+  background: repeating-linear-gradient(45deg, var(--bc-sleep), var(--bc-sleep) 4px, var(--bc-sleep-soft) 4px, var(--bc-sleep-soft) 8px);
 }
 
 .dot {
@@ -207,6 +207,6 @@ const view = computed(() => {
 .sleep-sw {
   width: 14px;
   border-radius: 4px;
-  background: #8e7cf3;
+  background: var(--bc-sleep);
 }
 </style>

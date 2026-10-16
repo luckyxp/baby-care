@@ -9,15 +9,15 @@ import { engine, syncState } from '@/sync/engine'
 
 const view = computed(() => {
   if (network.simulatedOffline || !network.browserOnline || syncState.status === 'offline') {
-    return { cls: 'pill--warn', icon: '📴', text: syncState.pending ? `离线 · ${syncState.pending}条待上传` : '离线可记录' }
+    return { cls: 'pill--warn', icon: 'warning-o', text: syncState.pending ? `离线 · ${syncState.pending}条待同步` : '离线' }
   }
   if (syncState.status === 'error') {
-    return { cls: 'pill--danger', icon: '⚠️', text: '同步异常' }
+    return { cls: 'pill--danger', icon: 'warning-o', text: '同步异常' }
   }
   if (syncState.status === 'syncing' || syncState.pending) {
-    return { cls: 'pill--primary', icon: '🔄', text: '同步中' }
+    return { cls: 'pill--primary', icon: 'replay', text: '同步中' }
   }
-  return { cls: 'pill--accent', icon: '✓', text: '已同步' }
+  return { cls: '', icon: 'passed', text: '已同步' }
 })
 
 async function syncNow() {
@@ -30,13 +30,17 @@ async function syncNow() {
 
 <template>
   <button class="pill sync" :class="view.cls" type="button" @click="syncNow">
-    <span>{{ view.icon }}</span>{{ view.text }}
+    <van-icon :name="view.icon" />{{ view.text }}
   </button>
 </template>
 
 <style scoped>
 .sync {
   border: 0;
+  min-height: 44px;
+  padding: 0 4px;
+  background: transparent;
+  font-size: 12px;
   cursor: pointer;
 }
 </style>

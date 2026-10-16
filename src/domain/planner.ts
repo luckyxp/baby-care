@@ -3,7 +3,7 @@
  * ----------------------------------------------------------------------------
  *  输入：宝宝档案 + 日期   输出：当日计划（喂养 / 日间早教 / 日间亲子 / 晚间亲子）
  *
- *    月龄 ──▶ 阶段方案(stageOf) ──▶ 喂养作息（育儿嫂自定义优先）
+ *    月龄 ──▶ 阶段方案(stageOf) ──▶ 对应阶段的喂养安排
  *      │
  *      └──▶ 素材库按月龄过滤 ──▶ 以"出生天数"为种子轮换选取
  *                                  · 同一天多次生成结果完全一致（幂等）
@@ -18,7 +18,7 @@ import type {
 } from '@/shared/types'
 import { eduFor, findLibraryItem, interactionsFor, recipesFor, stageOf, type EduActivity, type Interaction, type Recipe } from '@/library'
 import type { Draft } from '@/db/repo'
-import { ageOf, atTime, dayjs } from '@/utils/time'
+import { ageOf, atTime } from '@/utils/time'
 
 export const planIdOf = (babyId: string, date: DateKey) => `plan:${babyId}:${date}`
 const autoId = (babyId: string, date: DateKey, key: string) => `task:${babyId}:${date}:${key}`
@@ -80,13 +80,12 @@ export function activityTask(
 export function recommendPlan(baby: Baby, date: DateKey, variant = 0): PlanBundle {
   const age = ageOf(baby.birthday, date)
   const stage = stageOf(age.monthsFloat)
-  const seed = planSeed(age.totalDays, date, variant)
+  const seed = age.totalDays + variant * 3
   const id = (key: string) => (variant === 0 ? autoId(baby.id, date, key) : undefined)
   const tasks: Draft<PlanTask>[] = []
 
-  const schedule = baby.schedule ?? stage.schedule
   let solidIndex = 0
-  schedule.forEach((slot, i) => {
+  stage.schedule.forEach((slot, i) => {
     const recipe = slot.kind === 'solid' ? recipeForSlot(recipesFor(age.monthsFloat), slot, seed, solidIndex++) : undefined
     tasks.push(feedingTask(baby, date, slot, i, id(`feed${i}`), recipe))
   })
@@ -115,23 +114,6 @@ function recipeForSlot(pool: Recipe[], slot: ScheduleSlot, seed: number, index: 
   return rotate(candidates.length ? candidates : pool, seed + index * 7, 1)[0]
 }
 
-/**
- * 周一至周五按周模板选题：同一周内每天对应不同素材，下周再向后轮换一组。
- * 周末保留日期轮换，让家庭可以把它作为较轻松的自由活动日。
- */
-function planSeed(totalDays: number, date: DateKey, variant: number): number {
-  if (variant) {
-    return totalDays + variant * 3
-  }
-  const weekday = dayjs(date).day()
-  if (weekday === 0 || weekday === 6) {
-    return totalDays
-  }
-  const monday = dayjs(date).subtract(weekday - 1, 'day')
-  const week = Math.floor(monday.diff('2000-01-03', 'day') / 7)
-  return week * 5 + weekday - 1
-}
-
 /** "换一个"：同领域 / 同时段里挑一个当前计划中没有的活动 */
 export function swapCandidate(task: PlanTask, months: number, taken: Set<string>): EduActivity | Interaction | null {
   const pool: (EduActivity | Interaction)[] = task.kind === 'edu'
@@ -143,14 +125,6 @@ export function swapCandidate(task: PlanTask, months: number, taken: Set<string>
   }
   const at = task.sourceId ? pool.findIndex((x) => x.id === task.sourceId) : -1
   return fresh.find((_, i) => i > at) ?? fresh[0]
-}
-
-/** 把当日喂养任务保存为默认作息 */
-export function scheduleFromTasks(tasks: PlanTask[]): ScheduleSlot[] {
-  return tasks
-    .filter((t) => t.kind === 'feeding' && t.time)
-    .sort((a, b) => a.time!.localeCompare(b.time!))
-    .map((t) => ({ time: t.time!, kind: t.category as FeedKind, title: t.title, amount: t.amount }))
 }
 
 /* ── 喂养完成度：日志自动匹配计划时点 ──────────────────────────────────── */

@@ -20,7 +20,7 @@ import {
   ENTITY_NAMES,
   type Actor, type AnyEntity, type Baby, type BabyInput, type CareLog, type Change, type Checkin,
   type EntityName, type Family, type Invite, type InvitePreview, type Member, type Mutation,
-  type MutationResult, type Note, type PlanTask, type PullResponse, type PushResponse,
+  type MutationResult, type Note, type PlanTask, type PlanTemplate, type PullResponse, type PushResponse,
   type RejectCode, type SessionInfo, type UserProfile,
 } from '@/shared/types'
 import { createBus, type Bus } from '@/utils/bus'
@@ -28,6 +28,8 @@ import { sha256Hex } from '@/utils/crypto'
 import { inviteCode, token as newToken, uid } from '@/utils/id'
 import { CloudDB, type UserRow } from './db'
 import { deriveNotice, type NoticeDraft } from './notify'
+import { normalizeTemplateTasks } from '@/domain/plan-task'
+import { createDailyTemplatePresets } from '@/domain/daily-template-presets'
 
 export interface CloudEvent {
   familyId: string
@@ -38,7 +40,7 @@ export const CLOUD_CHANNEL = 'bc-cloud'
 
 const INVITE_TTL = 7 * 24 * 3600 * 1000
 const PROTECTED = new Set(['id', 'familyId', 'createdBy', 'createdAt', 'updatedBy', 'updatedAt', 'deleted', 'seq'])
-const BABY_SCOPED = new Set<EntityName>(['logs', 'notes', 'plans', 'tasks', 'checkins', 'reports', 'templates'])
+const BABY_SCOPED = new Set<EntityName>(['logs', 'notes', 'plans', 'tasks', 'checkins', 'reports', 'dailyTemplates'])
 
 interface Ctx {
   user: UserRow
@@ -147,7 +149,7 @@ export class CloudServer {
       })
       await this.db.entity('babies').add({
         ...envelope(family.id, user.id), seq: next(),
-        ...baby, name: baby.name.trim(), avatar: '', schedule: null,
+        ...baby, name: baby.name.trim(), avatar: '',
       })
     })
     return this.info(token, user)
@@ -244,6 +246,21 @@ export class CloudServer {
 
   async pull(token: string, cursor: number): Promise<PullResponse> {
     const { actor } = await this.ctxOf(token)
+    await this.commit(actor.familyId, async (next) => {
+      const babies = await this.db.entity('babies').where('familyId').equals(actor.familyId).filter((baby) => !baby.deleted).toArray()
+      const templates = this.db.entity('dailyTemplates')
+      const ownerId = (await this.db.families.get(actor.familyId))!.ownerId
+      const createdAt = Date.now()
+      for (const baby of babies) {
+        const presets = createDailyTemplatePresets(baby)
+        const existing = await templates.bulkGet(presets.map((preset) => preset.id))
+        for (const [index, preset] of presets.entries()) {
+          // 已修改和已删除的模板都算初始化完成，刷新与换设备不会恢复初始内容。
+          if (existing[index]) continue
+          await templates.add({ ...envelope(actor.familyId, ownerId, createdAt), ...preset, seq: next() })
+        }
+      }
+    })
     return this.db.transaction('r', this.tables(), async () => {
       const top = (await this.db.families.get(actor.familyId))?.seq ?? 0
       const changes: Change[] = []
@@ -368,6 +385,16 @@ export class CloudServer {
         return (rec as Note).content?.trim() ? null : '备注内容不能为空'
       case 'tasks':
         return (rec as PlanTask).title?.trim() ? null : '任务标题不能为空'
+      case 'dailyTemplates': {
+        const template = rec as PlanTemplate
+        if (typeof template.name !== 'string' || !template.name.trim()) return '请填写日模板名称'
+        try {
+          template.tasks = normalizeTemplateTasks(template.tasks)
+          return null
+        } catch (error) {
+          return error instanceof Error ? error.message : '日模板内容不完整'
+        }
+      }
       case 'checkins': {
         const ck = rec as Checkin
         const task = await this.db.entity('tasks').get(ck.taskId)

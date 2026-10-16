@@ -25,14 +25,13 @@ watch(
 </script>
 
 <template>
-  <section class="card block" :class="{ 'block--editing': editing }">
+  <section class="block" :class="{ 'block--editing': editing }">
     <header class="block-head">
-      <span class="icon">{{ block.icon }}</span>
       <span class="title">{{ block.title }}</span>
-      <span v-if="block.edited" class="pill pill--warn">已手动修改</span>
+      <span v-if="block.edited" class="edited">已编辑</span>
       <span class="grow" />
       <template v-if="editable">
-        <button v-if="!editing" class="link" type="button" @click="emit('edit')">编辑</button>
+        <button v-if="!editing" class="icon-button" type="button" :aria-label="`编辑${block.title}`" @click="emit('edit')"><van-icon name="edit" size="16" /></button>
         <template v-else>
           <button v-if="block.edited" class="link restore" type="button" @click="emit('restore')">恢复自动</button>
           <button class="link" type="button" @click="emit('done')">完成</button>
@@ -55,26 +54,28 @@ watch(
 
 <style scoped>
 .block {
-  padding: var(--sp-3) var(--sp-4);
+  padding: var(--sp-3) var(--sp-4) var(--sp-4);
 }
 
 .block--editing {
-  box-shadow: 0 0 0 2px var(--bc-primary), var(--bc-shadow);
+  background: var(--bc-primary-soft);
 }
 
 .block-head {
   display: flex;
   align-items: center;
   gap: 6px;
-  margin-bottom: 6px;
+  min-height: 40px;
+  margin-bottom: 4px;
 }
 
-.icon {
-  font-size: 18px;
+.edited {
+  font-size: 11px;
+  color: var(--bc-text-3);
 }
 
 .title {
-  font-size: 15px;
+  font-size: 14px;
   font-weight: 600;
 }
 
@@ -88,6 +89,7 @@ watch(
   white-space: pre-wrap;
   word-break: break-word;
   line-height: 1.7;
+  font-size: 13px;
   color: var(--bc-text);
   font-variant-numeric: tabular-nums;
 }

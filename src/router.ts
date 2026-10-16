@@ -28,6 +28,7 @@ const routes: RouteRecordRaw[] = [
   { path: '/home', component: () => import('@/views/Home.vue'), meta: { tab: true } },
   { path: '/logs', component: () => import('@/views/Logs.vue'), meta: { title: '护理日志' } },
   { path: '/plan', component: () => import('@/views/Plan.vue'), meta: { tab: true } },
+  { path: '/plan/templates', component: () => import('@/views/PlanTemplates.vue'), meta: { title: '日模板库', admin: true } },
   { path: '/library', component: () => import('@/views/Library.vue'), meta: { title: '素材库' } },
   { path: '/report', component: () => import('@/views/Report.vue'), meta: { tab: true } },
   { path: '/report/history', component: () => import('@/views/ReportHistory.vue'), meta: { title: '历史汇报' } },

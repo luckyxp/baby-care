@@ -66,15 +66,15 @@ function pick(d: Date) {
 }
 
 .nav {
-  width: 36px;
-  height: 36px;
+  width: 44px;
+  height: 44px;
+  flex: none;
   display: grid;
   place-items: center;
   border: 0;
-  border-radius: 50%;
-  background: var(--bc-surface);
+  border-radius: var(--bc-radius-sm);
+  background: transparent;
   color: var(--bc-text-2);
-  box-shadow: var(--bc-shadow);
   cursor: pointer;
 }
 
@@ -88,10 +88,11 @@ function pick(d: Date) {
   align-items: center;
   justify-content: center;
   gap: 6px;
-  height: 36px;
+  min-width: 0;
+  min-height: 44px;
   border: 0;
   background: none;
-  font-size: 16px;
+  font-size: 14px;
   font-weight: 600;
   cursor: pointer;
 }
@@ -103,8 +104,7 @@ function pick(d: Date) {
 }
 
 .today {
-  position: absolute;
-  right: 48px;
+  flex: none;
   font-size: 12px;
 }
 </style>

@@ -3,6 +3,7 @@
 =========================================================================== -->
 <script setup lang="ts">
 import { nextTick, ref, watch } from 'vue'
+import AppSheet from '@/components/AppSheet.vue'
 
 defineProps<{ text: string }>()
 const show = defineModel<boolean>('show', { required: true })
@@ -17,13 +18,12 @@ watch(show, async (on) => {
 </script>
 
 <template>
-  <van-popup v-model:show="show" position="bottom" round closeable teleport="body" :style="{ maxWidth: 'var(--bc-max-w)', left: '50%', transform: 'translateX(-50%)' }">
-    <div class="sheet">
-      <div class="sheet-head"><div class="sheet-title">手动复制</div></div>
+  <AppSheet v-model:show="show" title="手动复制">
+    <div>
       <p class="muted tip">当前浏览器不允许自动复制，请长按下方文字 → 全选 → 复制。</p>
       <textarea ref="area" class="textarea full" readonly :value="text" />
     </div>
-  </van-popup>
+  </AppSheet>
 </template>
 
 <style scoped>
