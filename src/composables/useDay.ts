@@ -5,12 +5,14 @@
  *  首页、计划、汇报共用，保证三处看到的是同一份数据。
  * ========================================================================== */
 
-import { computed, type Ref } from 'vue'
-import type { CareLog, Checkin, DateKey, Note, Plan, PlanTask, Report } from '@/shared/types'
+import { computed, watch, type Ref } from 'vue'
+import type { CareLog, Checkin, DateKey, Note, Plan, PlanTask, Report, TemplateSchedule } from '@/shared/types'
 import { db } from '@/db/client'
 import { useLive } from '@/db/live'
 import { useSession } from '@/stores/session'
 import { shiftDate } from '@/utils/time'
+import { ensurePlan } from '@/services/plan'
+import { isOnline } from '@/sync/network'
 
 const byTime = (a: CareLog, b: CareLog) => a.time - b.time
 
@@ -19,6 +21,13 @@ export function useDay(date: Readonly<Ref<DateKey>>) {
   const babyId = computed(() => session.baby?.id ?? '')
   const deps = [babyId, date]
   const key = () => [babyId.value, date.value] as const
+  const schedules = useLive(() => db().templateSchedules.where('babyId').equals(babyId.value).toArray(), [] as TemplateSchedule[], [babyId])
+
+  // 规则同步或恢复联网后重新检查当前日期；版本相同则保留所有单日调整。
+  watch([babyId, date, () => session.isAdmin, isOnline,
+    () => schedules.value.map((schedule) => `${schedule.id}:${schedule.revision}:${schedule.active}`).join('|')], () => {
+    if (session.baby) void ensurePlan(session.baby, date.value).catch((error) => console.error('[ensurePlan]', error))
+  }, { immediate: true })
 
   const logs = useLive(
     async () => {

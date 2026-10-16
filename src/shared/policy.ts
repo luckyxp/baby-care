@@ -61,6 +61,7 @@ export const POLICY: { [K in EntityName]: Rule<EntityMap[K]> } = {
   reports: ({ actor }) => isAdmin(actor),
   notices: ({ actor, op, prev }) => op === 'update' && prev?.recipientId === actor.userId,
   dailyTemplates: ({ actor }) => isAdmin(actor),
+  templateSchedules: ({ actor, op }) => isAdmin(actor) && op !== 'delete', // 停止使用 active=false，保留固定身份以便重新启用。
 }
 
 /**
@@ -71,6 +72,7 @@ export const MUTABLE_FIELDS: Partial<Record<EntityName, readonly string[]>> = {
   members: ['nickname', 'avatar'],
   notices: ['readAt'],
   dailyTemplates: ['name', 'tasks'],
+  templateSchedules: ['templateId', 'name', 'tasks', 'startDate', 'revision', 'active'],
 }
 
 /** 可见性：未列出的实体对全体家庭成员可见 */

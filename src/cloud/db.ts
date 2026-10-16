@@ -63,6 +63,7 @@ export class CloudDB extends Dexie {
     this.version(3).stores({ templates: null, dailyTemplates: ENTITY_INDEX })
     this.version(4).stores({ dailyTemplates: ENTITY_INDEX })
       .upgrade((transaction) => splitDailyTemplates(transaction, 'cloud'))
+    this.version(5).stores({ templateSchedules: ENTITY_INDEX })
   }
 
   entity<K extends EntityName>(name: K): Table<EntityMap[K], string> {

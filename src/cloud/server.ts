@@ -20,7 +20,7 @@ import {
   ENTITY_NAMES,
   type Actor, type AnyEntity, type Baby, type BabyInput, type CareLog, type Change, type Checkin,
   type EntityName, type Family, type Invite, type InvitePreview, type Member, type Mutation,
-  type MutationResult, type Note, type PlanTask, type PlanTemplate, type PullResponse, type PushResponse,
+  type MutationResult, type Note, type PlanTask, type PlanTemplate, type PullResponse, type PushResponse, type TemplateSchedule,
   type RejectCode, type SessionInfo, type UserProfile,
 } from '@/shared/types'
 import { createBus, type Bus } from '@/utils/bus'
@@ -28,8 +28,12 @@ import { sha256Hex } from '@/utils/crypto'
 import { inviteCode, token as newToken, uid } from '@/utils/id'
 import { CloudDB, type UserRow } from './db'
 import { deriveNotice, type NoticeDraft } from './notify'
-import { normalizeTemplateTasks } from '@/domain/plan-task'
+import { normalizeTaskInput, normalizeTemplateTasks } from '@/domain/plan-task'
 import { createDailyTemplatePresets } from '@/domain/daily-template-presets'
+import { prepareTemplateApplication, recurringTaskId, templateScheduleId } from '@/domain/template-application'
+import { planIdOf } from '@/domain/planner'
+import { stageOf } from '@/library'
+import { ageOf, dayjs, todayKey } from '@/utils/time'
 
 export interface CloudEvent {
   familyId: string
@@ -40,7 +44,7 @@ export const CLOUD_CHANNEL = 'bc-cloud'
 
 const INVITE_TTL = 7 * 24 * 3600 * 1000
 const PROTECTED = new Set(['id', 'familyId', 'createdBy', 'createdAt', 'updatedBy', 'updatedAt', 'deleted', 'seq'])
-const BABY_SCOPED = new Set<EntityName>(['logs', 'notes', 'plans', 'tasks', 'checkins', 'reports', 'dailyTemplates'])
+const BABY_SCOPED = new Set<EntityName>(['logs', 'notes', 'plans', 'tasks', 'checkins', 'reports', 'dailyTemplates', 'templateSchedules'])
 
 interface Ctx {
   user: UserRow
@@ -283,6 +287,51 @@ export class CloudServer {
     })
   }
 
+  /** 家庭成员均可展开已有每日规则；内容完全由规则决定，不接受任务输入。 */
+  async ensurePlan(token: string, babyId: string, date: string): Promise<void> {
+    const { actor } = await this.ctxOf(token)
+    await this.commit(actor.familyId, async (next) => {
+      const baby = await this.db.entity('babies').get(babyId)
+      if (!baby || baby.deleted || baby.familyId !== actor.familyId) throw new ApiError('NOT_FOUND', '宝宝档案不存在')
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || dayjs(date).format('YYYY-MM-DD') !== date || date < todayKey() || date < baby.birthday) {
+        throw new ApiError('INVALID', '请选择今天或之后的有效日期')
+      }
+      const plans = this.db.entity('plans')
+      const id = planIdOf(baby.id, date)
+      let previous = await plans.get(id)
+      const schedules = await this.db.entity('templateSchedules').where('familyId').equals(actor.familyId)
+        .filter((schedule) => !schedule.deleted && schedule.active && schedule.babyId === babyId && schedule.startDate <= date).toArray()
+      for (const schedule of schedules) {
+        if (previous?.templateRevisions?.[schedule.kind] === schedule.revision) continue
+        const [tasks, checkins, logs] = await Promise.all([
+          this.db.entity('tasks').where('familyId').equals(actor.familyId).filter((task) => !task.deleted && task.babyId === babyId && task.date === date).toArray(),
+          this.db.entity('checkins').where('familyId').equals(actor.familyId).filter((checkin) => !checkin.deleted && checkin.babyId === babyId && checkin.date === date).toArray(),
+          this.db.entity('logs').where('familyId').equals(actor.familyId).filter((log) => !log.deleted && log.babyId === babyId && log.date === date).toArray(),
+        ])
+        const application = prepareTemplateApplication(tasks, checkins, logs, schedule)
+        const userId = schedule.updatedBy
+        const at = Date.now()
+        for (const task of application.removed) {
+          await this.db.entity('tasks').put({ ...task, deleted: 1, updatedBy: userId, updatedAt: at, seq: next() })
+        }
+        for (const entry of application.entries) {
+          await this.db.entity('tasks').put({
+            ...envelope(actor.familyId, userId, at), ...normalizeTaskInput(entry),
+            id: recurringTaskId(babyId, date, schedule.revision, entry.order), babyId, date,
+            sourceId: entry.sourceId, order: entry.order, seq: next(),
+          })
+        }
+        const stage = stageOf(ageOf(baby.birthday, date).monthsFloat)
+        previous = {
+          ...envelope(actor.familyId, userId, at), ...previous, id, babyId, date, stageKey: stage.key, focus: stage.focus,
+          templateRevisions: { ...previous?.templateRevisions, [schedule.kind]: schedule.revision },
+          deleted: 0, updatedBy: userId, updatedAt: at, seq: next(),
+        }
+        await plans.put(previous)
+      }
+    })
+  }
+
   /* ── 内部：单条变更 ───────────────────────────────────────────────────── */
 
   private async apply(actor: Actor, m: Mutation, next: () => number, silent: boolean): Promise<MutationResult> {
@@ -393,6 +442,28 @@ export class CloudServer {
           return null
         } catch (error) {
           return error instanceof Error ? error.message : '日模板内容不完整'
+        }
+      }
+      case 'templateSchedules': {
+        const schedule = rec as TemplateSchedule
+        if (schedule.id !== templateScheduleId(schedule.babyId, schedule.kind)
+          || typeof schedule.active !== 'boolean' || typeof schedule.revision !== 'string' || !schedule.revision
+          || typeof schedule.name !== 'string' || !schedule.name.trim()
+          || typeof schedule.templateId !== 'string' || !schedule.templateId
+          || !/^\d{4}-\d{2}-\d{2}$/.test(schedule.startDate) || dayjs(schedule.startDate).format('YYYY-MM-DD') !== schedule.startDate) {
+          return '每日应用规则不完整'
+        }
+        const baby = (await this.db.entity('babies').get(schedule.babyId))!
+        if (schedule.startDate < baby.birthday) return '应用日期不能早于宝宝生日'
+        const source = await this.db.entity('dailyTemplates').get(schedule.templateId)
+        if (schedule.active && (!source || source.deleted || source.familyId !== actor.familyId || source.babyId !== schedule.babyId || source.kind !== schedule.kind)) {
+          return '请选择当前宝宝对应分类的日模板'
+        }
+        try {
+          schedule.tasks = normalizeTemplateTasks(schedule.tasks, schedule.kind)
+          return null
+        } catch (error) {
+          return error instanceof Error ? error.message : '每日应用内容不完整'
         }
       }
       case 'checkins': {

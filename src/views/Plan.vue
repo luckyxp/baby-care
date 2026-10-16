@@ -23,7 +23,7 @@ import { useClock } from '@/composables/useClock'
 import { useDay } from '@/composables/useDay'
 import type { LogInput } from '@/services/logs'
 import {
-  ensurePlan, feedingPreset, removeTask, swapTask, undoCheckin,
+  feedingPreset, removeTask, swapTask, undoCheckin,
 } from '@/services/plan'
 import { ageOf, ageText, dayjs, shiftDate } from '@/utils/time'
 import DateBar from '@/components/DateBar.vue'
@@ -73,17 +73,6 @@ const age = computed(() => (baby.value ? ageOf(baby.value.birthday, date.value) 
 const stage = computed(() => stageOf(age.value?.monthsFloat ?? 0))
 const locked = computed(() => date.value > today.value)
 const editing = ref(false)
-
-watch(
-  [() => baby.value?.id, date, () => session.isAdmin],
-  () => {
-    if (baby.value && session.isAdmin) {
-      ensurePlan(baby.value, date.value)
-        .catch((e) => console.error('[ensurePlan]', e))
-    }
-  },
-  { immediate: true },
-)
 
 /* ── 分组与进度 ─────────────────────────────────────────────────────────── */
 

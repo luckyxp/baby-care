@@ -9,7 +9,7 @@
     └ 最近记录时间线（→ 日志页）
 =========================================================================== -->
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { showConfirmDialog } from 'vant'
 import { LOG_KINDS, LOG_TYPES } from '@/shared/constants'
@@ -31,7 +31,6 @@ import { useAction } from '@/composables/useAction'
 import { useClock } from '@/composables/useClock'
 import { useDay } from '@/composables/useDay'
 import { useNotices } from '@/composables/useNotices'
-import { ensurePlan } from '@/services/plan'
 import { wakeUp } from '@/services/logs'
 import { useSession } from '@/stores/session'
 import { ageOf, ageText, atTime, dayjs, elapsed, fmtDuration, hm } from '@/utils/time'
@@ -51,17 +50,6 @@ const stage = computed(() => (age.value ? stageOf(age.value.monthsFloat) : null)
 
 const babySheet = ref(false)
 const babyActions = computed(() => session.babies.map((b) => ({ name: b.name, subname: ageText(ageOf(b.birthday)), id: b.id })))
-
-// 育儿嫂打开首页时顺手生成今天的计划（幂等）
-watch(
-  [baby, today, () => session.isAdmin],
-  ([b, d, admin]) => {
-    if (b && admin) {
-      void ensurePlan(b, d)
-    }
-  },
-  { immediate: true },
-)
 
 /* ── 状态卡 ─────────────────────────────────────────────────────────────── */
 

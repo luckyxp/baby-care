@@ -13,9 +13,10 @@ import { summarizeDay } from '@/domain/stats'
 import type { Bus } from '@/utils/bus'
 import { sha256Fallback, sha256Hex } from '@/utils/crypto'
 import { toHex, uid } from '@/utils/id'
-import { ageOf, ageText, atTime } from '@/utils/time'
+import { ageOf, ageText, atTime, dateKey, shiftDate } from '@/utils/time'
+import { templateScheduleId } from '@/domain/template-application'
 import type {
-  AnyEntity, Baby, CareLog, Checkin, EntityName, Mutation, PlanTask, PlanTemplate, SessionInfo,
+  AnyEntity, Baby, CareLog, Checkin, EntityName, Mutation, PlanTask, PlanTemplate, SessionInfo, TemplateSchedule,
 } from '@/shared/types'
 
 /* ── 工具 ───────────────────────────────────────────────────────────────── */
@@ -198,6 +199,72 @@ describe('cloud server', () => {
     expect((await server.push(nanny.token, [put('dailyTemplates', { ...template, tasks: [activity] })])).results[0]).toMatchObject({ ok: false, code: 'INVALID' })
     expect((await server.push(nanny.token, [put('dailyTemplates', { ...template, id: uid(), kind: 'edu' })])).results[0]).toMatchObject({ ok: false, code: 'INVALID' })
     expect((await server.db.entity('dailyTemplates').get(template.id))?.kind).toBe('feeding')
+  })
+
+  it('每日规则同步给家长，家长和育儿嫂并发打开远期日期也只生成一份完整计划', async () => {
+    const templates = await server.db.entity('dailyTemplates').toArray()
+    const pair = [templates.find((template) => template.kind === 'feeding')!, templates.find((template) => template.kind === 'edu')!]
+    const rules: TemplateSchedule[] = pair.map((template) => ({
+      ...envelope(nanny), id: templateScheduleId(baby.id, template.kind), babyId: baby.id, kind: template.kind,
+      templateId: template.id, name: template.name, tasks: template.tasks, active: true, startDate: dateKey(), revision: uid(),
+    }))
+    expect((await server.push(nanny.token, rules.map((rule) => put('templateSchedules', rule)))).results.every((result) => result.ok)).toBe(true)
+    const future = shiftDate(dateKey(), 800)
+    await Promise.all([server.ensurePlan(mom.token, baby.id, future), server.ensurePlan(nanny.token, baby.id, future)])
+    const pulled = await server.pull(mom.token, 0)
+    expect(pulled.changes.filter((change) => change.entity === 'templateSchedules')).toHaveLength(2)
+    const tasks = (await server.db.entity('tasks').toArray()).filter((task) => !task.deleted && task.date === future)
+    expect(tasks).toHaveLength(pair.reduce((total, template) => total + template.tasks.length, 0))
+    expect(tasks.every((task) => task.createdBy === nanny.user.id)).toBe(true)
+    const seq = pulled.cursor
+    await server.ensurePlan(mom.token, baby.id, future)
+    expect((await server.pull(mom.token, seq)).changes).toHaveLength(0)
+    expect((await server.push(nanny.token, [put('templateSchedules', { ...rules[0], active: false })])).results[0].ok).toBe(true)
+    await server.ensurePlan(mom.token, baby.id, shiftDate(future, 1))
+    const next = (await server.db.entity('tasks').toArray()).filter((task) => !task.deleted && task.date === shiftDate(future, 1))
+    expect(next).toHaveLength(pair[1].tasks.length)
+    expect(next.every((task) => task.kind !== 'feeding')).toBe(true)
+  })
+
+  it('云端更新每日规则仍保留晚间亲子打卡，自动生成任务沿用家长执行权限', async () => {
+    const template = (await server.db.entity('dailyTemplates').toArray()).find((item) => item.kind === 'edu')!
+    const rule: TemplateSchedule = {
+      ...envelope(nanny), id: templateScheduleId(baby.id, 'edu'), babyId: baby.id, kind: 'edu',
+      templateId: template.id, name: template.name, tasks: template.tasks, active: true, startDate: dateKey(), revision: uid(),
+    }
+    await server.push(nanny.token, [put('templateSchedules', rule)])
+    await server.ensurePlan(mom.token, baby.id, dateKey())
+    const task = (await server.db.entity('tasks').toArray()).find((task) => task.slot === 'evening')!
+    const checkin: Checkin = { ...envelope(mom), id: uid(), babyId: baby.id, date: dateKey(), taskId: task.id, kind: task.kind, category: task.category, slot: task.slot, rating: 4, tags: [], note: '一起玩', duration: 5 }
+    expect((await server.push(mom.token, [put('checkins', checkin)])).results[0].ok).toBe(true)
+    await server.push(nanny.token, [put('templateSchedules', { ...rule, revision: uid() })])
+    await server.ensurePlan(mom.token, baby.id, dateKey())
+    expect(await server.db.entity('tasks').get(task.id)).toEqual(task)
+    expect((await server.db.entity('checkins').get(checkin.id))?.deleted).toBe(0)
+    expect((await server.db.entity('tasks').toArray()).filter((task) => !task.deleted)).toHaveLength(template.tasks.length)
+  })
+
+  it('每日规则禁止家长写入、无效分类内容和伪造宝宝归属，展开接口不接受历史日期', async () => {
+    const template = (await server.db.entity('dailyTemplates').toArray()).find((item) => item.kind === 'feeding')!
+    const rule: TemplateSchedule = {
+      ...envelope(nanny), id: templateScheduleId(baby.id, 'feeding'), babyId: baby.id, kind: 'feeding',
+      templateId: template.id, name: template.name, tasks: template.tasks, active: true, startDate: dateKey(), revision: uid(),
+    }
+    expect((await server.push(mom.token, [put('templateSchedules', rule)])).results[0]).toMatchObject({ ok: false, code: 'FORBIDDEN' })
+    const invalid = [
+      { ...rule, startDate: '2027-02-30' },
+      { ...rule, id: 'wrong-id' },
+      { ...rule, kind: 'edu' as const },
+      { ...rule, tasks: [] },
+      { ...rule, babyId: 'other-baby' },
+      { ...rule, templateId: 'missing-template' },
+    ]
+    const results = await server.push(nanny.token, invalid.map((item) => put('templateSchedules', item)))
+    expect(results.results.every((result) => !result.ok && result.code === 'INVALID')).toBe(true)
+    expect(await server.db.entity('templateSchedules').count()).toBe(0)
+    await expect(server.ensurePlan(mom.token, baby.id, shiftDate(dateKey(), -1))).rejects.toMatchObject({ code: 'INVALID' })
+    await expect(server.ensurePlan(mom.token, 'other-baby', dateKey())).rejects.toMatchObject({ code: 'NOT_FOUND' })
+    expect(await server.db.entity('tasks').count()).toBe(0)
   })
 
   it('可见性：家长看不到邀请码，消息只推给接收人', async () => {

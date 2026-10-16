@@ -7,7 +7,7 @@ import {
   Baby, Bell, BookOpen, CalendarDays, ChartNoAxesColumn, Check, ChevronDown,
   ChevronLeft, ChevronRight, ChevronUp, ClipboardList, Copy, Droplets, Ellipsis,
   Eye, FileText, Footprints, Hand, Heart, House, Library, MessageCircle, Mic,
-  Milk, Moon, Pencil, Pill, Plus, Ruler, Sun, Thermometer, Toilet, Trash2,
+  Milk, Moon, Pencil, Pill, Plus, Repeat, Ruler, Sun, Thermometer, Toilet, Trash2,
   UserRound, UsersRound, Utensils, X,
 } from '@lucide/vue'
 
@@ -20,6 +20,7 @@ const icons = {
   report: ClipboardList, stats: ChartNoAxesColumn, user: UserRound, bell: Bell,
   library: Library, template: FileText, book: BookOpen, more: Ellipsis, edit: Pencil,
   delete: Trash2, copy: Copy, plus: Plus, close: X, check: Check,
+  repeat: Repeat,
   down: ChevronDown, up: ChevronUp, left: ChevronLeft, right: ChevronRight, family: UsersRound,
 }
 const icon = computed(() => icons[props.name as keyof typeof icons] ?? FileText)

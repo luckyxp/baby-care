@@ -30,6 +30,7 @@ export interface Transport {
   joinFamily(token: string, code: string): Promise<SessionInfo>
   push(token: string, mutations: Mutation[]): Promise<PushResponse>
   pull(token: string, cursor: number): Promise<PullResponse>
+  ensurePlan(token: string, babyId: string, date: string): Promise<void>
   /** 实时通道：家庭数据有变更时回调 */
   subscribe(fn: (e: CloudEvent) => void): () => void
 }
@@ -61,6 +62,7 @@ function createLocalTransport(): Transport {
     joinFamily: call(server.joinFamily.bind(server)),
     push: call((token: string, mutations: Mutation[]) => server.push(token, mutations)),
     pull: call(server.pull.bind(server)),
+    ensurePlan: call(server.ensurePlan.bind(server)),
     subscribe: (fn) => events.on(fn),
   }
 }

@@ -1,7 +1,7 @@
 /* ============================================================================
  *  计划模块的业务操作（均经 repo 写入：权限预检 + 乐观落库 + 离线队列）
  * ----------------------------------------------------------------------------
- *  日期计划   ensurePlan        今天及未来、本地尚无计划时创建空计划
+ *  日期计划   ensurePlan        按日期生成已启用的每日安排
  *  日模板库   saveDailyTemplate / removeDailyTemplate / applyDailyTemplate
  *  批量调整   regenerate        换一批早教与亲子（保留喂养与已打卡任务）
  *  单条调整   swapTask / addFromLibrary / addCustomTask / updateTask / removeTask
@@ -11,19 +11,22 @@
 import { MEDICINE_PRESETS } from '@/shared/constants'
 import { ApiError } from '@/shared/errors'
 import type {
-  Baby, Checkin, DateKey, FeedKind, PlanTask, PlanTemplate, Rating, Slot,
+  Baby, Checkin, DateKey, FeedKind, PlanTask, PlanTemplate, Rating, Slot, TemplateKind,
 } from '@/shared/types'
 import { stageOf, type EduActivity, type Interaction, type Recipe } from '@/library'
 import { normalizeTaskInput, normalizeTemplateTasks, type TaskInput } from '@/domain/plan-task'
 import {
-  FEED_LOG_TYPE, activityTask, matchFeeding, planIdOf, recommendPlan,
+  FEED_LOG_TYPE, activityTask, planIdOf, recommendPlan,
   swapCandidate,
 } from '@/domain/planner'
+import { prepareTemplateApplication, recurringTaskId, templateScheduleId } from '@/domain/template-application'
 import { db } from '@/db/client'
 import { useSession } from '@/stores/session'
 import { create, createMany, remove, removeMany, update, type Draft, type Patch } from '@/db/repo'
 import type { LogInput } from './logs'
 import { ageOf, atTime, dayjs, todayKey } from '@/utils/time'
+import { uid } from '@/utils/id'
+import { isOnline } from '@/sync/network'
 
 export type { TaskInput } from '@/domain/plan-task'
 
@@ -43,26 +46,40 @@ async function nextOrder(babyId: string, date: DateKey): Promise<number> {
 
 const inflight = new Map<string, Promise<void>>()
 
-/** 仅育儿嫂可触发；只建计划容器，具体任务由日模板或手工安排。 */
+/** 按需展开每日规则；家长经云端生成，不能借此编辑计划。 */
 export function ensurePlan(baby: Baby, date: DateKey): Promise<void> {
-  if (date < todayKey() || !useSession().isAdmin) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || dayjs(date).format('YYYY-MM-DD') !== date || date < todayKey() || date < baby.birthday) {
     return Promise.resolve()
   }
-  const id = planIdOf(baby.id, date)
-  const key = `${db().name}:${id}`
-  const running = inflight.get(key)
-  if (running) {
-    return running
-  }
   const d = db()
-  const job = d.transaction('rw', [d.plans, d.tasks, d.outbox], async () => {
-    const [plan, tasks] = await Promise.all([db().plans.get(id), tasksOf(baby.id, date)])
-    if (plan || tasks.length) {
+  const id = planIdOf(baby.id, date)
+  const key = `${d.name}:${id}`
+  const running = inflight.get(key)
+  if (running) return running
+  const session = useSession()
+  const job = (async () => {
+    if (!session.isAdmin) {
+      if (!isOnline()) return
+      const { transport } = await import('@/sync/transport')
+      const { engine } = await import('@/sync/engine')
+      await transport.ensurePlan(session.token, baby.id, date)
+      engine.schedule(0)
       return
     }
-    const stage = stageOf(ageOf(baby.birthday, date).monthsFloat)
-    await create('plans', { id, babyId: baby.id, date, stageKey: stage.key, focus: stage.focus })
-  }).finally(() => inflight.delete(key))
+    await d.transaction('rw', [d.plans, d.tasks, d.checkins, d.logs, d.templateSchedules, d.outbox], async () => {
+      const plan = await d.plans.get(id)
+      const schedules = await d.templateSchedules.where('babyId').equals(baby.id)
+        .filter((schedule) => schedule.active && !schedule.deleted && schedule.startDate <= date).toArray()
+      for (const schedule of schedules) {
+        if (plan?.templateRevisions?.[schedule.kind] === schedule.revision) continue
+        await applyTemplateToDate(baby, date, schedule, schedule.revision, true)
+      }
+      if (!await d.plans.get(id)) {
+        const stage = stageOf(ageOf(baby.birthday, date).monthsFloat)
+        await create('plans', { id, babyId: baby.id, date, stageKey: stage.key, focus: stage.focus })
+      }
+    })
+  })().finally(() => inflight.delete(key))
   inflight.set(key, job)
   return job
 }
@@ -87,12 +104,46 @@ export async function saveDailyTemplate(
 }
 
 export async function removeDailyTemplate(baby: Baby, id: string): Promise<void> {
-  const template = await db().dailyTemplates.get(id)
-  if (!template || template.deleted || template.babyId !== baby.id) throw new ApiError('NOT_FOUND', '日模板不存在')
-  await remove('dailyTemplates', id)
+  const d = db()
+  await d.transaction('rw', [d.dailyTemplates, d.templateSchedules, d.outbox], async () => {
+    const template = await d.dailyTemplates.get(id)
+    if (!template || template.deleted || template.babyId !== baby.id) throw new ApiError('NOT_FOUND', '日模板不存在')
+    const schedule = await d.templateSchedules.get(templateScheduleId(baby.id, template.kind))
+    if (schedule?.active && schedule.templateId === id) await update('templateSchedules', { id: schedule.id, active: false })
+    await remove('dailyTemplates', id)
+  })
 }
 
-/** 整批日期原子应用，仅替换同类未完成任务；另一类及已完成任务保持原样。 */
+/** 调用者持有整批事务，单日逻辑同时服务于具体日期与每日规则。 */
+async function applyTemplateToDate(
+  baby: Baby, target: DateKey, template: Pick<PlanTemplate, 'kind' | 'tasks'>, revision: string | null, recurring = false,
+): Promise<void> {
+  const d = db()
+  const [tasks, checkins, logs] = await Promise.all([
+    tasksOf(baby.id, target), checkinsOf(baby.id, target),
+    d.logs.where('[babyId+date]').equals([baby.id, target]).toArray(),
+  ])
+  const application = prepareTemplateApplication(tasks, checkins, logs, template)
+  await removeMany('tasks', application.removed.map((task) => task.id))
+
+  const stage = stageOf(ageOf(baby.birthday, target).monthsFloat)
+  const id = planIdOf(baby.id, target)
+  const previous = await d.plans.get(id)
+  const plan = {
+    babyId: baby.id, date: target, stageKey: stage.key, focus: stage.focus,
+    templateRevisions: { ...previous?.templateRevisions, [template.kind]: revision },
+  }
+  if (previous) await update('plans', { id, ...plan })
+  else await create('plans', { id, ...plan })
+
+  const drafts = application.entries.map((entry) => ({
+    ...normalizeTaskInput(entry), babyId: baby.id, date: target, sourceId: entry.sourceId, order: entry.order,
+    ...(recurring ? { id: recurringTaskId(baby.id, target, revision!, entry.order) } : {}),
+  }))
+  if (drafts.length) await createMany('tasks', drafts)
+}
+
+/** 整批日期原子应用，记录当前每日版本，保留之后对这些日期的单独调整。 */
 export async function applyDailyTemplate(
   baby: Baby, dates: DateKey[], template: Pick<PlanTemplate, 'babyId' | 'kind' | 'name' | 'tasks'>,
 ): Promise<number> {
@@ -102,64 +153,61 @@ export async function applyDailyTemplate(
   if (targets.some((date) => !/^\d{4}-\d{2}-\d{2}$/.test(date) || dayjs(date).format('YYYY-MM-DD') !== date || date < todayKey() || date < baby.birthday)) {
     throw new ApiError('INVALID', '请选择今天或之后的有效日期')
   }
-  const entries = normalizeTemplateTasks(template.tasks, template.kind)
-  const signature = (task: PlanTask | PlanTemplate['tasks'][number]) => JSON.stringify([
-    task.kind, task.category, task.slot, task.time, task.sourceId, task.title,
-  ])
+  normalizeTemplateTasks(template.tasks, template.kind)
   const d = db()
-  await d.transaction('rw', [d.plans, d.tasks, d.checkins, d.logs, d.outbox], async () => {
+  await d.transaction('rw', [d.plans, d.tasks, d.checkins, d.logs, d.templateSchedules, d.outbox], async () => {
+    const schedule = await d.templateSchedules.get(templateScheduleId(baby.id, template.kind))
     for (const target of targets) {
-      const [tasks, checkins, logs] = await Promise.all([
-        tasksOf(baby.id, target), checkinsOf(baby.id, target),
-        d.logs.where('[babyId+date]').equals([baby.id, target]).toArray(),
-      ])
-      const completed = new Set([
-        ...checkins.map((checkin) => checkin.taskId),
-        ...logs.flatMap((log) => log.taskId ? [log.taskId] : []),
-        ...matchFeeding(tasks, logs).keys(),
-      ])
-      const scoped = tasks.filter((task) => (task.kind === 'feeding') === (template.kind === 'feeding'))
-      const retained = new Map<string, number>()
-      scoped.filter((task) => completed.has(task.id)).forEach((task) => {
-        const key = signature(task)
-        retained.set(key, (retained.get(key) ?? 0) + 1)
-      })
-      await removeMany('tasks', scoped.filter((task) => !completed.has(task.id)).map((task) => task.id))
-
-      const stage = stageOf(ageOf(baby.birthday, target).monthsFloat)
-      const plan = { babyId: baby.id, date: target, stageKey: stage.key, focus: stage.focus }
-      const id = planIdOf(baby.id, target)
-      if (await d.plans.get(id)) await update('plans', { id, ...plan })
-      else await create('plans', { id, ...plan })
-
-      const drafts = entries.flatMap((entry) => {
-        const key = signature(entry)
-        const count = retained.get(key) ?? 0
-        if (count) {
-          retained.set(key, count - 1)
-          return []
-        }
-        return [{ ...normalizeTaskInput(entry), babyId: baby.id, date: target, sourceId: entry.sourceId, order: entry.order }]
-      })
-      if (drafts.length) await createMany('tasks', drafts)
+      const revision = schedule?.active && schedule.startDate <= target ? schedule.revision : null
+      await applyTemplateToDate(baby, target, template, revision)
     }
   })
   return targets.length
 }
 
+/** 无限期每日应用：立即替换已安排日期，其余日期打开时按同一快照生成。 */
+export async function applyDailyTemplateEveryDay(baby: Baby, template: Pick<PlanTemplate, 'id' | 'babyId' | 'kind' | 'name' | 'tasks'>): Promise<void> {
+  if (template.babyId !== baby.id) throw new ApiError('INVALID', '请选择当前宝宝的日模板')
+  const tasks = normalizeTemplateTasks(template.tasks, template.kind)
+  const d = db()
+  await d.transaction('rw', [d.dailyTemplates, d.templateSchedules, d.plans, d.tasks, d.checkins, d.logs, d.outbox], async () => {
+    const source = await d.dailyTemplates.get(template.id)
+    if (!source || source.deleted || source.babyId !== baby.id || source.kind !== template.kind) throw new ApiError('NOT_FOUND', '日模板不存在')
+    const id = templateScheduleId(baby.id, template.kind)
+    const startDate = todayKey() < baby.birthday ? baby.birthday : todayKey()
+    const input = { babyId: baby.id, kind: template.kind, templateId: template.id, name: template.name, tasks, startDate, revision: uid(), active: true }
+    const schedule = await d.templateSchedules.get(id) ? await update('templateSchedules', { id, ...input }) : await create('templateSchedules', { id, ...input })
+    const [plans, existing] = await Promise.all([
+      d.plans.where('[babyId+date]').between([baby.id, startDate], [baby.id, '9999-12-31'], true, true).toArray(),
+      d.tasks.where('[babyId+date]').between([baby.id, startDate], [baby.id, '9999-12-31'], true, true).toArray(),
+    ])
+    const dates = [...new Set([startDate, ...plans.map((plan) => plan.date), ...existing.map((task) => task.date)])].sort()
+    for (const date of dates) await applyTemplateToDate(baby, date, schedule, schedule.revision, true)
+  })
+}
+
+/** 停止后不再生成新日期；已生成的计划和护理记录保留。 */
+export async function stopDailyTemplateEveryDay(baby: Baby, kind: TemplateKind): Promise<void> {
+  const schedule = await db().templateSchedules.get(templateScheduleId(baby.id, kind))
+  if (schedule?.active) await update('templateSchedules', { id: schedule.id, active: false })
+}
+
 /** 清空当前宝宝的护理数据与计划配置，保留档案、家庭成员和消息。 */
 export async function clearCareData(baby: Baby): Promise<void> {
   const d = db()
-  const [logs, notes, plans, tasks, checkins, reports, templates] = await Promise.all([
-    d.logs.toArray(), d.notes.toArray(), d.plans.toArray(), d.tasks.toArray(), d.checkins.toArray(), d.reports.toArray(), d.dailyTemplates.toArray(),
+  const [logs, notes, plans, tasks, checkins, reports, templates, schedules] = await Promise.all([
+    d.logs.toArray(), d.notes.toArray(), d.plans.toArray(), d.tasks.toArray(), d.checkins.toArray(), d.reports.toArray(), d.dailyTemplates.toArray(), d.templateSchedules.toArray(),
   ])
-  await d.transaction('rw', [d.logs, d.notes, d.plans, d.tasks, d.checkins, d.reports, d.dailyTemplates, d.outbox], async () => {
+  await d.transaction('rw', [d.logs, d.notes, d.plans, d.tasks, d.checkins, d.reports, d.dailyTemplates, d.templateSchedules, d.outbox], async () => {
     await removeMany('checkins', checkins.filter((item) => item.babyId === baby.id).map((item) => item.id))
     await removeMany('tasks', tasks.filter((item) => item.babyId === baby.id).map((item) => item.id))
     await removeMany('plans', plans.filter((item) => item.babyId === baby.id).map((item) => item.id))
     await removeMany('reports', reports.filter((item) => item.babyId === baby.id).map((item) => item.id))
     await removeMany('notes', notes.filter((item) => item.babyId === baby.id).map((item) => item.id))
     await removeMany('logs', logs.filter((item) => item.babyId === baby.id).map((item) => item.id))
+    for (const schedule of schedules.filter((item) => item.babyId === baby.id && item.active)) {
+      await update('templateSchedules', { id: schedule.id, active: false })
+    }
     await removeMany('dailyTemplates', templates.filter((item) => item.babyId === baby.id).map((item) => item.id))
   })
 }

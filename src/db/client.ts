@@ -11,7 +11,7 @@
 import Dexie, { type Table } from 'dexie'
 import { ref } from 'vue'
 import type {
-  Baby, CareLog, Checkin, EntityMap, EntityName, Invite, Member, Mutation, Note, Notice, Plan, PlanTask, PlanTemplate, Report,
+  Baby, CareLog, Checkin, EntityMap, EntityName, Invite, Member, Mutation, Note, Notice, Plan, PlanTask, PlanTemplate, Report, TemplateSchedule,
 } from '@/shared/types'
 import { ENTITY_NAMES } from '@/shared/types'
 import { splitDailyTemplates } from './template-upgrade'
@@ -37,6 +37,7 @@ export class ClientDB extends Dexie {
   reports!: Table<Report, string>
   notices!: Table<Notice, string>
   dailyTemplates!: Table<PlanTemplate, string>
+  templateSchedules!: Table<TemplateSchedule, string>
   outbox!: Table<OutboxRow, number>
   meta!: Table<MetaRow, string>
 
@@ -63,6 +64,7 @@ export class ClientDB extends Dexie {
     })
     this.version(4).stores({ dailyTemplates: 'id, babyId, [babyId+kind]' })
       .upgrade((transaction) => splitDailyTemplates(transaction, 'client'))
+    this.version(5).stores({ templateSchedules: 'id, babyId, [babyId+kind]' })
   }
 
   entity<K extends EntityName>(name: K): Table<EntityMap[K], string> {

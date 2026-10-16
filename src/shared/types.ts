@@ -196,6 +196,8 @@ export interface Plan extends BaseEntity {
   date: DateKey
   stageKey: string
   focus: string
+  /** 已处理的每日规则版本；单日调整也记录当前版本，防止重开日期时被覆盖。 */
+  templateRevisions?: Partial<Record<TemplateKind, string | null>>
 }
 
 export interface PlanTask extends BaseEntity {
@@ -227,6 +229,18 @@ export interface PlanTemplate extends BaseEntity {
   kind: TemplateKind
   name: string
   tasks: TemplateTask[]
+}
+
+/** 每个宝宝、每类模板独立保存一条每日规则，内容使用应用时的快照。 */
+export interface TemplateSchedule extends BaseEntity {
+  babyId: ID
+  kind: TemplateKind
+  templateId: ID
+  name: string
+  tasks: TemplateTask[]
+  startDate: DateKey
+  revision: ID
+  active: boolean
 }
 
 /** 4 很棒 · 3 不错 · 2 一般 · 1 不配合 */
@@ -292,13 +306,14 @@ export interface EntityMap {
   reports: Report
   notices: Notice
   dailyTemplates: PlanTemplate
+  templateSchedules: TemplateSchedule
 }
 
 export type EntityName = keyof EntityMap
 export type AnyEntity = EntityMap[EntityName]
 
 export const ENTITY_NAMES: readonly EntityName[] = [
-  'members', 'invites', 'babies', 'logs', 'notes', 'plans', 'tasks', 'checkins', 'reports', 'notices', 'dailyTemplates',
+  'members', 'invites', 'babies', 'logs', 'notes', 'plans', 'tasks', 'checkins', 'reports', 'notices', 'dailyTemplates', 'templateSchedules',
 ] as const
 
 /* ── 同步协议 ───────────────────────────────────────────────────────────── */

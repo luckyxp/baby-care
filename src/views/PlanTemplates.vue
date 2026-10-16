@@ -10,12 +10,13 @@ import { showConfirmDialog, showFailToast } from 'vant'
 import { EDU_CATEGORIES, FEED_KIND_META, TEMPLATE_KIND_LABEL } from '@/shared/constants'
 import type { EduCategory, FeedKind, PlanTemplate, Slot, TemplateKind, TemplateTask } from '@/shared/types'
 import { normalizeTemplateTasks, type TaskInput } from '@/domain/plan-task'
+import { templateScheduleId } from '@/domain/template-application'
 import { useSession } from '@/stores/session'
 import { useClock } from '@/composables/useClock'
 import { useAction } from '@/composables/useAction'
 import { useLive } from '@/db/live'
 import { db } from '@/db/client'
-import { applyDailyTemplate, isRecipe, removeDailyTemplate, saveDailyTemplate, type LibraryPick } from '@/services/plan'
+import { applyDailyTemplate, applyDailyTemplateEveryDay, isRecipe, removeDailyTemplate, saveDailyTemplate, stopDailyTemplateEveryDay, type LibraryPick } from '@/services/plan'
 import { ageOf, dateKey, dayjs, shiftDate } from '@/utils/time'
 import PageNav from '@/components/PageNav.vue'
 import ChipGroup from '@/components/ChipGroup.vue'
@@ -44,6 +45,8 @@ const templateKind = computed<TemplateKind>({
   get: () => route.query.kind === 'edu' ? 'edu' : 'feeding',
   set: (kind) => { void router.replace({ query: { ...route.query, kind } }) },
 })
+const schedule = useLive(() => db().templateSchedules.get(templateScheduleId(babyId.value, templateKind.value)), undefined, [babyId, templateKind])
+const currentSchedule = computed(() => schedule.value?.active && !schedule.value.deleted ? schedule.value : null)
 const templateOptions = [
   { value: 'feeding' as const, label: '喂养模板', symbol: 'milk' },
   { value: 'edu' as const, label: '早教模板', symbol: 'gross' },
@@ -76,7 +79,8 @@ const taskIndex = ref<number | null>(null)
 const taskInput = ref<TaskInput | null>(null)
 const pickerShow = ref(false)
 const calendarShow = ref(false)
-const selectedTemplate = ref<Pick<PlanTemplate, 'babyId' | 'kind' | 'name' | 'tasks'> | null>(null)
+const scopeShow = ref(false)
+const selectedTemplate = ref<Pick<PlanTemplate, 'id' | 'babyId' | 'kind' | 'name' | 'tasks'> | null>(null)
 const selectedDates = ref<Date[]>([])
 const appliedDates = ref<string[]>([])
 watch(templateKind, () => { search.value = ''; appliedDates.value = [] })
@@ -182,7 +186,7 @@ async function save() {
 async function drop(template: PlanTemplate) {
   if (!baby.value) return
   const confirmed = await showConfirmDialog({
-    title: '删除日模板', message: `确定删除「${template.name}」吗？已应用到日期中的计划会保留。`,
+    title: '删除日模板', message: `确定删除「${template.name}」吗？${currentSchedule.value?.templateId === template.id ? '同时停止每天应用，' : ''}已生成的日程会保留。`,
   }).then(() => true).catch(() => false)
   if (!confirmed) return
   await run(() => removeDailyTemplate(baby.value!, template.id), '日模板已删除')
@@ -200,12 +204,40 @@ function selectDraftAction(index: number, action: { value: string }) {
 }
 
 /* ----------------------------------------------------------------------------
- * 应用快照：先多选具体日期，再确认替换未完成安排；不用星期推导目标日期。
+ * 应用快照：具体日期与无限期每日应用独立选择，始终只替换同类未完成安排。
  * -------------------------------------------------------------------------- */
-function openApply(template: Pick<PlanTemplate, 'babyId' | 'kind' | 'name' | 'tasks'>) {
+function openApply(template: Pick<PlanTemplate, 'id' | 'babyId' | 'kind' | 'name' | 'tasks'>) {
   selectedTemplate.value = { ...template, tasks: cloneTasks(template.tasks) }
-  selectedDates.value = [dayjs(referenceDate.value < today.value ? today.value : referenceDate.value).toDate()]
+  scopeShow.value = true
+}
+
+function chooseDates() {
+  const minDate = baby.value?.birthday && baby.value.birthday > today.value ? baby.value.birthday : today.value
+  selectedDates.value = [dayjs(referenceDate.value < minDate ? minDate : referenceDate.value).toDate()]
+  scopeShow.value = false
   calendarShow.value = true
+}
+
+async function applyEveryDay() {
+  const template = selectedTemplate.value
+  if (!baby.value || !template || busy.value) return
+  const confirmed = await showConfirmDialog({
+    title: '应用到今天及以后每天',
+    message: `「${template.name}」\n\n${template.kind === 'feeding' ? '替换每天未完成的喂养安排，早教与亲子不变。' : '替换每天未完成的早教与亲子安排，喂养不变。'}已完成任务和护理记录保留，可随时停止。`,
+    confirmButtonText: '每天应用',
+  }).then(() => true).catch(() => false)
+  if (!confirmed) return
+  const saved = await run(async () => { await applyDailyTemplateEveryDay(baby.value!, template); return true }, '已应用到今天及以后每天')
+  if (saved) { scopeShow.value = false; appliedDates.value = [] }
+}
+
+async function stopEveryDay() {
+  const current = currentSchedule.value
+  if (!baby.value || !current || busy.value) return
+  const confirmed = await showConfirmDialog({
+    title: '停止每天应用', message: `停止自动安排「${current.name}」？已生成的日程和护理记录会保留。`, confirmButtonText: '停止应用',
+  }).then(() => true).catch(() => false)
+  if (confirmed) await run(() => stopDailyTemplateEveryDay(baby.value!, current.kind), '已停止每天应用')
 }
 
 async function apply(value: Date | Date[]) {
@@ -235,6 +267,10 @@ async function apply(value: Date | Date[]) {
     </PageNav>
     <main v-if="!editing" class="template-body page-body">
       <ChipGroup v-model="templateKind" :options="templateOptions" segmented class="template-kind-tabs" />
+      <div v-if="currentSchedule" class="daily-status" role="status">
+        <AppIcon name="repeat" :size="16" /><span class="grow">每天应用 · {{ currentSchedule.name }}</span>
+        <button type="button" :disabled="busy" @click="stopEveryDay">停止</button>
+      </div>
       <section v-if="appliedDates.length" class="applied-card">
         <strong><AppIcon name="check" :size="16" /> 已安排 {{ appliedDates.length }} 天</strong>
         <div class="date-links"><router-link v-for="date in appliedDates" :key="date" :to="{ path: '/plan', query: { date } }">{{ dayjs(date).format('M月D日') }} <AppIcon name="right" :size="12" /></router-link></div>
@@ -287,7 +323,18 @@ async function apply(value: Date | Date[]) {
     </AppSheet>
     <TaskFormSheet v-model:show="taskShow" :task="taskInput" :allowed-kinds="allowedKinds" :defaults="{ kind: templateKind, slot: 'day' }" :title="taskIndex === null ? '添加任务' : '编辑任务'" @save="saveTask" />
     <TemplateMaterialPicker v-model:show="pickerShow" :kind="templateKind" :months="age.monthsFloat" :added-ids="tasks.flatMap((task) => task.sourceId ? [task.sourceId] : [])" @pick="pickMaterial" />
-    <van-calendar v-model:show="calendarShow" type="multiple" switch-mode="year-month" title="选择应用日期" :default-date="selectedDates" :min-date="dayjs(today).toDate()" :max-date="dayjs(shiftDate(today, 365)).toDate()" first-day-of-week="1" confirm-text="应用到所选日期" teleport="body" @confirm="apply" />
+    <AppSheet v-model:show="scopeShow" title="应用模板">
+      <p class="application-name">{{ selectedTemplate?.name }}</p>
+      <div class="scope-options">
+        <button type="button" class="scope-option" :disabled="busy" @click="chooseDates">
+          <AppIcon name="plan" :size="22" /><span class="grow"><strong>选择具体日期</strong><small>可多选，单独安排</small></span><AppIcon name="right" :size="18" />
+        </button>
+        <button type="button" class="scope-option" :disabled="busy" @click="applyEveryDay">
+          <AppIcon name="repeat" :size="22" /><span class="grow"><strong>今天及以后每天</strong><small>持续应用，可随时停止</small></span><van-loading v-if="busy" size="18" /><AppIcon v-else name="right" :size="18" />
+        </button>
+      </div>
+    </AppSheet>
+    <van-calendar v-model:show="calendarShow" type="multiple" switch-mode="year-month" title="选择应用日期" :default-date="selectedDates" :min-date="dayjs(baby && baby.birthday > today ? baby.birthday : today).toDate()" :max-date="dayjs(shiftDate(today, 365)).toDate()" first-day-of-week="1" confirm-text="应用到所选日期" teleport="body" @confirm="apply" />
   </div>
 </template>
 
@@ -295,6 +342,18 @@ async function apply(value: Date | Date[]) {
 .templates-page { background: var(--bc-surface); }
 .template-body { padding-top: 16px; }
 .template-kind-tabs { margin-bottom: 8px; }
+.daily-status { display: flex; align-items: center; gap: 8px; min-height: 44px; font-size: 12px; color: var(--bc-text-2); border-bottom: 1px solid var(--bc-border); }
+.daily-status .grow { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.daily-status button { min-width: 44px; min-height: 44px; padding: 0; border: 0; background: transparent; color: var(--bc-text-2); font-size: 12px; cursor: pointer; }
+.application-name { margin: 0 0 12px; color: var(--bc-text-3); font-size: 12px; overflow-wrap: anywhere; }
+.scope-options { display: grid; gap: 8px; }
+.scope-option { display: flex; align-items: center; gap: 16px; width: 100%; min-height: 76px; padding: 12px 0; border: 0; background: transparent; text-align: left; cursor: pointer; }
+.scope-option + .scope-option { border-top: 1px solid var(--bc-border); }
+.scope-option > svg:first-child { color: var(--bc-text-2); flex: none; }
+.scope-option > svg:last-child { color: var(--bc-text-3); flex: none; }
+.scope-option strong { display: block; font-size: 15px; font-weight: 500; line-height: 1.5; }
+.scope-option small { display: block; margin-top: 4px; font-size: 12px; color: var(--bc-text-3); line-height: 1.5; }
+.scope-option:disabled, .daily-status button:disabled { opacity: .4; cursor: default; }
 .template-body :deep(.van-search) { padding-bottom: 12px; }
 .library-caption { font-size: 12px; color: var(--bc-text-3); padding: 4px 0 8px; }
 .template-list { margin-inline: -20px; }
