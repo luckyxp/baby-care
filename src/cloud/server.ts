@@ -389,7 +389,7 @@ export class CloudServer {
         const template = rec as PlanTemplate
         if (typeof template.name !== 'string' || !template.name.trim()) return '请填写日模板名称'
         try {
-          template.tasks = normalizeTemplateTasks(template.tasks)
+          template.tasks = normalizeTemplateTasks(template.tasks, template.kind)
           return null
         } catch (error) {
           return error instanceof Error ? error.message : '日模板内容不完整'

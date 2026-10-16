@@ -220,8 +220,11 @@ export type TemplateTask = Pick<PlanTask,
   'kind' | 'category' | 'slot' | 'time' | 'title' | 'desc' | 'steps' | 'sourceId' | 'amount' | 'order'
 >
 
+export type TemplateKind = 'feeding' | 'edu'
+
 export interface PlanTemplate extends BaseEntity {
   babyId: ID
+  kind: TemplateKind
   name: string
   tasks: TemplateTask[]
 }

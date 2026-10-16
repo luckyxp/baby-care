@@ -9,6 +9,7 @@
  * ========================================================================== */
 
 import Dexie, { type Table } from 'dexie'
+import { splitDailyTemplates } from '@/db/template-upgrade'
 import type { EntityMap, EntityName, Family, Member, MutationResult, UserProfile } from '@/shared/types'
 
 export interface UserRow extends UserProfile {
@@ -60,6 +61,8 @@ export class CloudDB extends Dexie {
     })
     this.version(2).stores({ templates: ENTITY_INDEX })
     this.version(3).stores({ templates: null, dailyTemplates: ENTITY_INDEX })
+    this.version(4).stores({ dailyTemplates: ENTITY_INDEX })
+      .upgrade((transaction) => splitDailyTemplates(transaction, 'cloud'))
   }
 
   entity<K extends EntityName>(name: K): Table<EntityMap[K], string> {

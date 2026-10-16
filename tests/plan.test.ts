@@ -1,13 +1,10 @@
 /* ============================================================================
- *  日模板计划测试
- * ----------------------------------------------------------------------------
- *  覆盖完整内容保存、非连续日期应用、完成记录保护和整批事务回滚。
+ * 分类日模板：验证两类独立应用、完成记录保护、权限与整批事务。
  * ========================================================================== */
-
 import 'fake-indexeddb/auto'
 import Dexie from 'dexie'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { Actor, Baby, TemplateTask } from '@/shared/types'
+import type { Actor, Baby, TemplateKind, TemplateTask } from '@/shared/types'
 import { closeClientDB, db, openClientDB } from '@/db/client'
 import { bindRepo, create } from '@/db/repo'
 import { applyDailyTemplate, ensurePlan, refreshUpcomingPlans, removeDailyTemplate, saveDailyTemplate } from '@/services/plan'
@@ -20,7 +17,6 @@ import { uid } from '@/utils/id'
 
 const auth = vi.hoisted(() => ({ isAdmin: true }))
 vi.mock('@/stores/session', () => ({ useSession: () => auth }))
-
 const date = dateKey()
 const envelope = { familyId: 'family', createdBy: 'nanny', updatedBy: 'nanny', createdAt: 1, updatedAt: 1, deleted: 0 as const, seq: 0 }
 const baby: Baby = {
@@ -28,26 +24,23 @@ const baby: Baby = {
   feedingMode: 'mixed', birthWeight: null, birthHeight: null, allergies: '', avatar: '',
 }
 let actor: Actor
-
 beforeEach(() => {
   openClientDB(`daily-template-${uid()}`)
   actor = { userId: 'nanny', familyId: 'family', role: 'admin', relation: 'nanny' }
   bindRepo({ actor: () => actor, onWrite: () => {} })
 })
-
-afterEach(async () => {
-  bindRepo(null)
-  await closeClientDB(true)
-})
+afterEach(async () => { bindRepo(null); await closeClientDB(true) })
 
 const entry = (title: string, patch: Partial<TemplateTask> = {}): TemplateTask => ({
   kind: 'feeding', category: 'solid', slot: 'day', time: '12:00', title, desc: '', steps: [], sourceId: null, amount: null, order: 1, ...patch,
 })
-const fullDay = () => [
+const feeding = () => [
   entry('晨奶', { category: 'milk', time: '07:00', amount: 180 }),
   entry('午餐辅食', { steps: ['先洗手', '坐稳进食'], sourceId: 'r01' }),
   entry('维生素D', { category: 'supplement', time: '08:00' }),
   entry('喝水', { category: 'water', time: '10:00', amount: 30 }),
+]
+const education = () => [
   entry('滚球追爬', { kind: 'edu', category: 'gross', time: null, sourceId: 'g31' }),
   entry('日间共读', { kind: 'interaction', category: 'language', time: null }),
   entry('晚间亲子', { kind: 'interaction', category: 'social', slot: 'evening', time: '20:00' }),
@@ -57,18 +50,18 @@ const createTask = (task: TemplateTask, target = date) => create('tasks', {
   ...task, babyId: baby.id, date: target, assignee: task.kind !== 'feeding' && task.slot === 'evening' ? 'parent' : 'nanny',
 })
 
-/* ── 模板库 ─────────────────────────────────────────────────────────────── */
-
-describe('各月龄初始日模板', () => {
-  it('覆盖全部月龄阶段，包含喂养、早教与亲子，素材符合对应月龄', () => {
+/* ── 分类与内容 ─────────────────────────────────────────────────────────── */
+describe('分类日模板库', () => {
+  it('所有月龄各有一份喂养和早教模板，素材符合对应月龄', () => {
     const presets = createDailyTemplatePresets(baby)
-    expect(presets).toHaveLength(STAGES.length)
-    presets.forEach((preset, index) => {
-      const stage = STAGES[index]
-      expect(preset.name).toContain(stage.range)
-      expect(new Set(preset.tasks.map((task) => task.kind))).toEqual(new Set(['feeding', 'edu', 'interaction']))
-      expect(preset.tasks.filter((task) => task.kind === 'feeding')).toHaveLength(stage.schedule.length)
-      for (const task of preset.tasks) {
+    expect(presets).toHaveLength(STAGES.length * 2)
+    STAGES.forEach((stage) => {
+      const pair = presets.filter((preset) => preset.name.startsWith(`${stage.range} ·`))
+      expect(pair.map((preset) => preset.kind)).toEqual(['feeding', 'edu'])
+      expect(pair[0].tasks).toHaveLength(stage.schedule.length)
+      expect(pair[0].tasks.every((task) => task.kind === 'feeding')).toBe(true)
+      expect(new Set(pair[1].tasks.map((task) => task.kind))).toEqual(new Set(['edu', 'interaction']))
+      for (const task of pair.flatMap((preset) => preset.tasks)) {
         if (!task.sourceId) continue
         const item = findLibraryItem(task.sourceId)!
         expect(item).toBeDefined()
@@ -79,198 +72,225 @@ describe('各月龄初始日模板', () => {
     expect(createDailyTemplatePresets({ ...baby, birthday: '2020-12-31' })).toEqual(presets)
   })
 
-  it('初始模板可直接保存、编辑、应用及删除，应用后的日期保持独立', async () => {
-    const preset = createDailyTemplatePresets(baby).find((template) => template.name.startsWith('10-12'))!
-    const saved = await saveDailyTemplate(baby, preset.name, preset.tasks)
-    const edited = await saveDailyTemplate(baby, '我的 11 月龄安排', [{ ...saved.tasks[0], title: '晨奶改为 200ml', amount: 200 }], saved.id)
+  it('初始模板可保存、编辑、应用及删除，已应用的日期独立保留', async () => {
+    const preset = createDailyTemplatePresets(baby).find((template) => template.kind === 'feeding' && template.name.startsWith('10-12'))!
+    const saved = await saveDailyTemplate(baby, preset)
+    const edited = await saveDailyTemplate(baby, { kind: 'feeding', name: '11 月龄喂养', tasks: [{ ...saved.tasks[0], title: '晨奶 200ml', amount: 200 }] }, saved.id)
     await applyDailyTemplate(baby, [date], edited)
     await removeDailyTemplate(baby, edited.id)
     expect(await db().dailyTemplates.count()).toBe(0)
-    expect(await tasksOn(date)).toMatchObject([{ title: '晨奶改为 200ml', amount: 200 }])
+    expect(await tasksOn(date)).toMatchObject([{ title: '晨奶 200ml', amount: 200 }])
   })
-})
 
-describe('日模板库', () => {
-  it('打开日期仅创建空计划，不自动创建任务', async () => {
+  it('喂养保留所有喂养类别，早教同时容纳日间与晚间亲子', async () => {
+    const feed = await saveDailyTemplate(baby, { kind: 'feeding', name: '  日常喂养  ', tasks: feeding() })
+    const edu = await saveDailyTemplate(baby, { kind: 'edu', name: '早教与陪伴', tasks: education() })
+    expect(feed.name).toBe('日常喂养')
+    expect(feed.tasks.map((task) => task.order)).toEqual([1, 2, 3, 4])
+    expect(feed.tasks[1]).toMatchObject({ steps: ['先洗手', '坐稳进食'], sourceId: 'r01' })
+    expect(edu.tasks).toHaveLength(3)
+    expect(edu.tasks[2]).toMatchObject({ kind: 'interaction', slot: 'evening' })
+    expect(await db().dailyTemplates.count()).toBe(2)
+  })
+
+  it('编辑与输入相互独立，删除一类模板不会删另一类', async () => {
+    const tasks = feeding()
+    const feed = await saveDailyTemplate(baby, { kind: 'feeding', name: '原名称', tasks })
+    const edu = await saveDailyTemplate(baby, { kind: 'edu', name: '早教', tasks: education() })
+    tasks[1].steps.push('未保存的修改')
+    expect((await db().dailyTemplates.get(feed.id))!.tasks[1].steps).toHaveLength(2)
+    const updated = await saveDailyTemplate(baby, { kind: 'feeding', name: '新的名称', tasks: [entry('新的午餐')] }, feed.id)
+    expect(updated.id).toBe(feed.id)
+    await removeDailyTemplate(baby, feed.id)
+    expect(await db().dailyTemplates.toArray()).toEqual([edu])
+  })
+
+  it('打开日期仅建空计划，不自动填充任何一类任务', async () => {
     await ensurePlan(baby, date)
     expect(await db().plans.count()).toBe(1)
     expect(await db().tasks.count()).toBe(0)
   })
 
-  it('一份日模板同时保存所有喂养类别、早教与亲子内容', async () => {
-    const saved = await saveDailyTemplate(baby, '  日常照护  ', fullDay())
-    expect(saved.name).toBe('日常照护')
-    expect(saved.tasks).toHaveLength(7)
-    expect(saved.tasks.map((task) => task.order)).toEqual([1, 2, 3, 4, 5, 6, 7])
-    expect(saved.tasks[1]).toMatchObject({ steps: ['先洗手', '坐稳进食'], sourceId: 'r01', time: '12:00' })
-    expect(await db().dailyTemplates.count()).toBe(1)
-  })
-
-  it('可修改和删除模板，编辑输入与保存内容相互独立', async () => {
-    const input = fullDay()
-    const saved = await saveDailyTemplate(baby, '原名称', input)
-    input[1].steps.push('未保存的修改')
-    expect((await db().dailyTemplates.get(saved.id))!.tasks[1].steps).toHaveLength(2)
-    const updated = await saveDailyTemplate(baby, '修改后的名称', [entry('新的午餐')], saved.id)
-    expect(updated.id).toBe(saved.id)
-    expect(await db().dailyTemplates.count()).toBe(1)
-    expect(updated.tasks.map((task) => task.title)).toEqual(['新的午餐'])
-    await removeDailyTemplate(baby, saved.id)
-    expect(await db().dailyTemplates.count()).toBe(0)
-  })
-
-  it('当前计划另存时仅提取内容，不携带日期、身份与打卡状态', () => {
-    const recommended = recommendPlan(baby, date).tasks
-    const tasks = normalizeTemplateTasks(recommended)
-    expect(tasks.length).toBe(recommended.length)
+  it.each(['feeding', 'edu'] as const)('当前计划提取 %s 内容时不携带日期、身份与打卡状态', (kind) => {
+    const scoped = recommendPlan(baby, date).tasks.filter((task) => (task.kind === 'feeding') === (kind === 'feeding'))
+    const tasks = normalizeTemplateTasks(scoped, kind)
+    expect(tasks).toHaveLength(scoped.length)
     expect(tasks.every((task) => !('date' in task) && !('id' in task) && !('assignee' in task))).toBe(true)
   })
 
   it.each([
-    ['空名称', '', [entry('午餐')]],
-    ['无任务', '照护', []],
-    ['错误类别', '照护', [entry('午餐', { category: 'gross' })]],
-    ['错误时间', '照护', [entry('午餐', { time: '25:00' })]],
-    ['错误计划量', '照护', [entry('晨奶', { category: 'milk', amount: -10 })]],
-    ['空标题', '照护', [entry('   ')]],
+    ['空名称', '', [entry('午餐')]], ['无任务', '喂养', []],
+    ['错误类别', '喂养', [entry('午餐', { category: 'gross' })]],
+    ['错误时间', '喂养', [entry('午餐', { time: '25:00' })]],
+    ['错误计划量', '喂养', [entry('晨奶', { category: 'milk', amount: -10 })]],
+    ['空标题', '喂养', [entry('   ')]],
   ] as const)('%s不能保存且不产生队列写入', async (_label, name, tasks) => {
-    await expect(saveDailyTemplate(baby, name, [...tasks])).rejects.toMatchObject({ code: 'INVALID' })
+    await expect(saveDailyTemplate(baby, { kind: 'feeding', name, tasks: [...tasks] })).rejects.toMatchObject({ code: 'INVALID' })
     expect(await db().dailyTemplates.count()).toBe(0)
     expect(await db().outbox.count()).toBe(0)
   })
 
-  it('不能编辑或删除其他宝宝的模板', async () => {
-    const saved = await saveDailyTemplate(baby, '照护', [entry('午餐')])
+  it.each(['feeding', 'edu'] as const)('拒绝混入另一类任务的 %s 模板', async (kind) => {
+    await expect(saveDailyTemplate(baby, { kind, name: '混合', tasks: [...feeding(), ...education()] })).rejects.toMatchObject({ code: 'INVALID' })
+    expect(await db().outbox.count()).toBe(0)
+  })
+
+  it('不能用修改模板的方式改变分类，也不能应用伪造的混合模板', async () => {
+    const template = await saveDailyTemplate(baby, { kind: 'feeding', name: '喂养', tasks: feeding() })
+    await expect(saveDailyTemplate(baby, { kind: 'edu', name: '改类', tasks: education() }, template.id)).rejects.toMatchObject({ code: 'INVALID' })
+    await expect(applyDailyTemplate(baby, [date], { ...template, tasks: [...feeding(), ...education()] })).rejects.toMatchObject({ code: 'INVALID' })
+    await expect(saveDailyTemplate(baby, { kind: 'invalid' as TemplateKind, name: '无效类型', tasks: feeding() })).rejects.toMatchObject({ code: 'INVALID' })
+    expect(await db().tasks.count()).toBe(0)
+  })
+
+  it('不能编辑、删除或应用其他宝宝的模板', async () => {
+    const template = await saveDailyTemplate(baby, { kind: 'feeding', name: '喂养', tasks: feeding() })
     const other = { ...baby, id: 'other-baby' }
-    await expect(saveDailyTemplate(other, '越权修改', [entry('晚餐')], saved.id)).rejects.toMatchObject({ code: 'NOT_FOUND' })
-    await expect(removeDailyTemplate(other, saved.id)).rejects.toMatchObject({ code: 'NOT_FOUND' })
+    await expect(saveDailyTemplate(other, { kind: 'feeding', name: '越权', tasks: feeding() }, template.id)).rejects.toMatchObject({ code: 'NOT_FOUND' })
+    await expect(removeDailyTemplate(other, template.id)).rejects.toMatchObject({ code: 'NOT_FOUND' })
+    await expect(applyDailyTemplate(other, [date], template)).rejects.toMatchObject({ code: 'INVALID' })
   })
 })
 
-/* ── 应用到具体日期 ─────────────────────────────────────────────────────── */
+/* ── 独立应用与完成记录 ─────────────────────────────────────────────────── */
+describe('分别应用喂养与早教模板', () => {
+  it.each([['feeding', 'edu'], ['edu', 'feeding']] as const)('按 %s → %s 顺序应用后，同一天的两类安排共存', async (first, second) => {
+    const feed = await saveDailyTemplate(baby, { kind: 'feeding', name: '喂养', tasks: feeding() })
+    const edu = await saveDailyTemplate(baby, { kind: 'edu', name: '早教', tasks: education() })
+    const templates = { feeding: feed, edu }
+    await applyDailyTemplate(baby, [date], templates[first])
+    const before = await db().tasks.toArray()
+    await applyDailyTemplate(baby, [date], templates[second])
+    expect(await db().tasks.bulkGet(before.map((task) => task.id))).toEqual(before)
+    expect(await db().tasks.count()).toBe(7)
+    await applyDailyTemplate(baby, [date], templates[second])
+    expect(await db().tasks.bulkGet(before.map((task) => task.id))).toEqual(before)
+    expect(await db().tasks.count()).toBe(7)
+  })
 
-describe('应用日模板', () => {
-  it('只应用用户选中的非连续日期，跨月日期也互不联动', async () => {
-    const template = await saveDailyTemplate(baby, '完整一天', fullDay())
+  it.each(['feeding', 'edu'] as const)('重用 %s 模板只替换同类未完成任务，另一类与其队列不变', async (kind) => {
+    const original = await Promise.all([...feeding(), ...education()].map((task) => createTask(task)))
+    const untouched = original.filter((task) => (task.kind === 'feeding') !== (kind === 'feeding'))
+    const replaced = original.filter((task) => !untouched.includes(task))
+    const queued = await db().outbox.count()
+    const tasks = kind === 'feeding' ? [entry('新的午餐')] : [education()[0]]
+    const template = await saveDailyTemplate(baby, { kind, name: '替换', tasks })
+    await applyDailyTemplate(baby, [date], template)
+    expect(await db().tasks.bulkGet(untouched.map((task) => task.id))).toEqual(untouched)
+    expect(await db().tasks.bulkGet(replaced.map((task) => task.id))).toEqual(replaced.map(() => undefined))
+    const added = (await db().outbox.toArray()).slice(queued).filter((row) => row.entity === 'tasks')
+    expect(added.every((row) => !untouched.some((task) => task.id === row.id))).toBe(true)
+  })
+
+  it('非连续跨月日期均独立应用两类模板，不影响未选中日期', async () => {
+    const feed = await saveDailyTemplate(baby, { kind: 'feeding', name: '喂养', tasks: feeding() })
+    const edu = await saveDailyTemplate(baby, { kind: 'edu', name: '早教', tasks: education() })
     const targets = [date, shiftDate(date, 3), shiftDate(date, 40)]
-    expect(await applyDailyTemplate(baby, [targets[2], targets[0], targets[1], targets[0]], template)).toBe(3)
-    const tasks = await db().tasks.toArray()
+    expect(await applyDailyTemplate(baby, [targets[2], targets[0], targets[1], targets[0]], feed)).toBe(3)
+    await applyDailyTemplate(baby, targets, edu)
     expect(await db().plans.count()).toBe(3)
-    expect([...new Set(tasks.map((task) => task.date))].sort()).toEqual(targets)
+    const tasks = await db().tasks.toArray()
     expect(tasks).toHaveLength(21)
     expect(new Set(tasks.map((task) => task.id)).size).toBe(21)
-    for (const target of targets) expect((await tasksOn(target)).map((task) => task.title)).toEqual(template.tasks.map((task) => task.title))
+    expect([...new Set(tasks.map((task) => task.date))].sort()).toEqual(targets)
   })
 
-  it('保留全部内容字段，喂养由育儿嫂执行，晚间活动由家长执行', async () => {
-    const template = await saveDailyTemplate(baby, '分工', [
-      entry('晚奶', { category: 'milk', time: '20:00', amount: 160 }),
-      entry('晚间共读', { kind: 'edu', category: 'language', slot: 'evening', sourceId: 'l01', steps: ['一起看书'] }),
-    ])
-    await applyDailyTemplate(baby, [date], template)
-    expect(await tasksOn(date)).toMatchObject([
-      { kind: 'feeding', slot: 'evening', time: '20:00', amount: 160, assignee: 'nanny' },
-      { kind: 'edu', slot: 'evening', assignee: 'parent', sourceId: 'l01', steps: ['一起看书'] },
-    ])
+  it('喂养由育儿嫂执行，晚间早教与亲子仍由家长执行', async () => {
+    const feed = await saveDailyTemplate(baby, { kind: 'feeding', name: '喂养', tasks: [entry('晚奶', { category: 'milk', time: '20:00', amount: 160 })] })
+    const edu = await saveDailyTemplate(baby, { kind: 'edu', name: '陪伴', tasks: [entry('晚间共读', { kind: 'edu', category: 'language', slot: 'evening', sourceId: 'l01', steps: ['一起看书'] })] })
+    await applyDailyTemplate(baby, [date], feed)
+    await applyDailyTemplate(baby, [date], edu)
+    expect((await db().tasks.toArray()).find((task) => task.kind === 'feeding')).toMatchObject({ slot: 'evening', time: '20:00', amount: 160, assignee: 'nanny' })
+    expect((await db().tasks.toArray()).find((task) => task.kind === 'edu')).toMatchObject({ assignee: 'parent', sourceId: 'l01', steps: ['一起看书'] })
   })
 
-  it('修改或删除模板不会回写已应用日期；不同日期任务也独立', async () => {
-    const template = await saveDailyTemplate(baby, '原模板', fullDay())
+  it('编辑、删除模板和调整宝宝生日，都不会改写已应用的任务', async () => {
+    const template = await saveDailyTemplate(baby, { kind: 'feeding', name: '喂养', tasks: feeding() })
     const tomorrow = shiftDate(date, 1)
     await applyDailyTemplate(baby, [date, tomorrow], template)
-    await saveDailyTemplate(baby, '新模板', [entry('另一份内容')], template.id)
-    await removeDailyTemplate(baby, template.id)
-    const [first] = await tasksOn(date)
-    await db().tasks.update(first.id, { title: '仅修改当天' })
-    expect((await tasksOn(date))[0].title).toBe('仅修改当天')
-    expect((await tasksOn(tomorrow))[0].title).toBe('晨奶')
-    expect(await db().tasks.count()).toBe(14)
-  })
-
-  it('修改宝宝生日只刷新月龄方案，不向已应用的计划追加或改写任务', async () => {
-    const template = await saveDailyTemplate(baby, '独立安排', fullDay())
-    await applyDailyTemplate(baby, [date, shiftDate(date, 1)], template)
     const before = await db().tasks.toArray()
-    const adjustedBaby = { ...baby, birthday: dayjs(date).subtract(15, 'month').format('YYYY-MM-DD') }
-    expect(await refreshUpcomingPlans(adjustedBaby)).toBe(2)
+    await saveDailyTemplate(baby, { kind: 'feeding', name: '新的名称', tasks: [entry('另一份内容')] }, template.id)
+    await removeDailyTemplate(baby, template.id)
+    expect(await refreshUpcomingPlans({ ...baby, birthday: dayjs(date).subtract(15, 'month').format('YYYY-MM-DD') })).toBe(2)
     expect(await db().tasks.toArray()).toEqual(before)
     expect((await db().plans.toArray()).every((plan) => plan.stageKey === 'm12')).toBe(true)
+    const [first] = await tasksOn(date)
+    await db().tasks.update(first.id, { title: '仅修改当天' })
+    expect((await tasksOn(tomorrow))[0].title).toBe('晨奶')
   })
 
-  it('替换未完成安排，保留已打卡任务及其打卡，且不重复添加同一已完成任务', async () => {
-    const finishedInput = entry('已完成的早教', { kind: 'edu', category: 'gross', time: null })
-    const finished = await createTask(finishedInput)
-    const pending = await createTask(entry('旧的未完成安排'))
-    await create('checkins', { babyId: baby.id, date, taskId: finished.id, kind: 'edu', category: 'gross', slot: 'day', rating: 4, tags: [], note: '玩得开心', duration: 5 })
-    const template = await saveDailyTemplate(baby, '新的一天', [finishedInput, entry('新的午餐')])
+  it('应用早教保留打卡及其备注，不重复复制已完成活动，也不影响待喂养', async () => {
+    const input = education()[0]
+    const finished = await createTask(input)
+    const pending = await createTask(education()[1])
+    const milk = await createTask(feeding()[0])
+    const checkin = await create('checkins', { babyId: baby.id, date, taskId: finished.id, kind: 'edu', category: 'gross', slot: 'day', rating: 4, tags: [], note: '玩得开心', duration: 5 })
+    const note = await create('notes', { babyId: baby.id, date, targetType: 'task', targetId: finished.id, content: '继续观察' })
+    const template = await saveDailyTemplate(baby, { kind: 'edu', name: '早教', tasks: [input, education()[2]] })
     await applyDailyTemplate(baby, [date], template)
-    expect(await db().tasks.get(finished.id)).toBeDefined()
+    expect(await db().tasks.get(finished.id)).toEqual(finished)
     expect(await db().tasks.get(pending.id)).toBeUndefined()
-    expect((await tasksOn(date)).map((task) => task.title).sort()).toEqual(['已完成的早教', '新的午餐'].sort())
-    expect((await db().checkins.toArray())[0].note).toBe('玩得开心')
+    expect(await db().tasks.get(milk.id)).toEqual(milk)
+    expect(await db().checkins.get(checkin.id)).toEqual(checkin)
+    expect(await db().notes.get(note.id)).toEqual(note)
+    expect(await db().tasks.count()).toBe(3)
   })
 
-  it.each([true, false])('保护已经记录的喂养任务（直接关联日志=%s）', async (linked) => {
-    const input = entry('晨奶', { category: 'milk', time: '07:00', amount: 180 })
-    const feeding = await createTask(input)
+  it.each([true, false])('应用喂养保留已记录的任务（直接关联日志=%s），不影响未完成早教', async (linked) => {
+    const input = feeding()[0]
+    const milk = await createTask(input)
+    const edu = await createTask(education()[0])
     const log = await create('logs', {
       babyId: baby.id, date, type: 'milk', time: atTime(date, '07:05'), endTime: null,
-      data: { mode: 'formula', amount: 180, duration: null, side: null }, note: '已喝完', source: 'manual', taskId: linked ? feeding.id : null,
+      data: { mode: 'formula', amount: 180, duration: null, side: null }, note: '已喝完', source: 'manual', taskId: linked ? milk.id : null,
     })
-    const template = await saveDailyTemplate(baby, '照护', [input, entry('午餐')])
+    const template = await saveDailyTemplate(baby, { kind: 'feeding', name: '喂养', tasks: [input, entry('午餐')] })
     await applyDailyTemplate(baby, [date], template)
-    expect(await db().tasks.get(feeding.id)).toBeDefined()
+    expect(await db().tasks.bulkGet([milk.id, edu.id])).toEqual([milk, edu])
     expect(await db().logs.get(log.id)).toEqual(log)
-    expect(await db().tasks.count()).toBe(2)
+    expect(await db().tasks.count()).toBe(3)
   })
 
-  it('不修改未选中日期、历史记录和其他宝宝的安排', async () => {
-    const unselected = await createTask(entry('其他日期安排'), shiftDate(date, 2))
-    const history = await createTask(entry('历史安排'), shiftDate(date, -1))
+  it('未选中日期、历史记录和其他宝宝保持原样', async () => {
+    const unselected = await createTask(entry('其他日期'), shiftDate(date, 2))
+    const history = await createTask(entry('历史'), shiftDate(date, -1))
     const other = await create('tasks', { ...entry('其他宝宝'), babyId: 'other-baby', date, assignee: 'nanny' })
-    const template = await saveDailyTemplate(baby, '照护', [entry('午餐')])
+    const template = await saveDailyTemplate(baby, { kind: 'feeding', name: '喂养', tasks: feeding() })
     await applyDailyTemplate(baby, [date], template)
     expect(await db().tasks.bulkGet([unselected.id, history.id, other.id])).toEqual([unselected, history, other])
   })
 
-  it.each([
-    { label: '未选择日期', dates: [] },
-    { label: '过去日期', dates: [shiftDate(date, -1)] },
-    { label: '不存在的日期', dates: ['2027-02-30'] },
-    { label: '错误日期格式', dates: ['bad-date'] },
-  ])('拒绝$label，整批不写入', async ({ dates }) => {
-    const template = await saveDailyTemplate(baby, '照护', [entry('午餐')])
-    await expect(applyDailyTemplate(baby, dates, template)).rejects.toMatchObject({ code: 'INVALID' })
+  it.each([[], [shiftDate(date, -1)], ['2027-02-30'], ['bad-date']])('拒绝无效日期 %j，整批不写入', async (...dates) => {
+    const template = await saveDailyTemplate(baby, { kind: 'feeding', name: '喂养', tasks: feeding() })
+    await expect(applyDailyTemplate(baby, dates as string[], template)).rejects.toMatchObject({ code: 'INVALID' })
     expect(await db().tasks.count()).toBe(0)
     expect(await db().plans.count()).toBe(0)
   })
 
-  it('后一个日期写入失败时，前一个日期的替换和离线队列一起回滚', async () => {
-    const original = await createTask(entry('待替换的安排'))
-    const template = await saveDailyTemplate(baby, '照护', [entry('午餐')])
+  it('后一日期写入失败时，全部替换和队列回滚，另一类也保持不变', async () => {
+    const original = await createTask(entry('待替换'))
+    const edu = await createTask(education()[0])
+    const template = await saveDailyTemplate(baby, { kind: 'feeding', name: '喂养', tasks: [entry('午餐')] })
     const queued = await db().outbox.count()
     let calls = 0
     bindRepo({ actor: () => ++calls >= 5 ? null : actor, onWrite: () => {} })
     await expect(applyDailyTemplate(baby, [date, shiftDate(date, 1)], template)).rejects.toMatchObject({ code: 'UNAUTHORIZED' })
     expect(await db().plans.count()).toBe(0)
-    expect(await db().tasks.toArray()).toEqual([original])
+    expect((await db().tasks.toArray()).sort((a, b) => a.id.localeCompare(b.id))).toEqual([original, edu].sort((a, b) => a.id.localeCompare(b.id)))
     expect(await db().outbox.count()).toBe(queued)
   })
 
-  it('家长不能保存、删除或应用日模板', async () => {
-    const template = await saveDailyTemplate(baby, '照护', [entry('午餐')])
+  it('家长不能保存、删除或应用任何分类模板', async () => {
+    const template = await saveDailyTemplate(baby, { kind: 'feeding', name: '喂养', tasks: feeding() })
     actor = { userId: 'mother', familyId: 'family', role: 'parent', relation: 'mother' }
-    await expect(saveDailyTemplate(baby, '越权模板', fullDay())).rejects.toMatchObject({ code: 'FORBIDDEN' })
+    await expect(saveDailyTemplate(baby, { kind: 'edu', name: '越权', tasks: education() })).rejects.toMatchObject({ code: 'FORBIDDEN' })
     await expect(removeDailyTemplate(baby, template.id)).rejects.toMatchObject({ code: 'FORBIDDEN' })
     await expect(applyDailyTemplate(baby, [date], template)).rejects.toMatchObject({ code: 'FORBIDDEN' })
     expect(await db().tasks.count()).toBe(0)
-    expect(await db().dailyTemplates.count()).toBe(1)
   })
 })
 
-/* ── 存储升级 ───────────────────────────────────────────────────────────── */
-
-it('替换旧模板存储时保留护理日志，并清除已废弃实体的待上传操作', async () => {
+it('替换旧周模板存储时保留护理日志，并移除已废弃实体的待上传操作', async () => {
   await closeClientDB(true)
   const userId = `daily-upgrade-${uid()}`
   const previous = new Dexie(`bc_client_${userId}`)

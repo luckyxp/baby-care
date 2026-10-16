@@ -144,18 +144,19 @@ describe('cloud server', () => {
 
   it('首次同步把各月龄模板存入家庭，并发或重复同步不重复添加', async () => {
     const rows = await server.db.entity('dailyTemplates').where('familyId').equals(nanny.family!.id).toArray()
-    expect(rows).toHaveLength(STAGES.length)
+    expect(rows).toHaveLength(STAGES.length * 2)
     expect(rows.every((template) => template.babyId === baby.id && template.createdBy === nanny.user.id)).toBe(true)
     expect(new Set(rows.map((template) => template.name))).toEqual(new Set(STAGES.map((stage) => `${stage.range} · ${stage.title}`)))
     const [a, b] = await Promise.all([server.pull(nanny.token, 0), server.pull(mom.token, 0)])
     expect(a.cursor).toBe(b.cursor)
-    expect(await server.db.entity('dailyTemplates').count()).toBe(STAGES.length)
-    expect(b.changes.filter((change) => change.entity === 'dailyTemplates')).toHaveLength(STAGES.length)
+    expect(await server.db.entity('dailyTemplates').count()).toBe(STAGES.length * 2)
+    expect(b.changes.filter((change) => change.entity === 'dailyTemplates')).toHaveLength(STAGES.length * 2)
   })
 
   it('修改和删除初始模板后，刷新、重建服务与重新登录均不恢复', async () => {
     const templates = await server.db.entity('dailyTemplates').where('familyId').equals(nanny.family!.id).toArray()
-    const [first, ...rest] = templates
+    const first = templates.find((template) => template.kind === 'feeding')!
+    const rest = templates.filter((template) => template.id !== first.id)
     const edited = { ...first, name: '我的宝宝专属安排', tasks: [{ ...first.tasks[0], slot: 'day' as const, time: '08:00', amount: 190 }] }
     const result = await server.push(nanny.token, [put('dailyTemplates', edited), ...rest.map((template) => del('dailyTemplates', template.id))])
     expect(result.results.every((item) => item.ok)).toBe(true)
@@ -167,7 +168,7 @@ describe('cloud server', () => {
     await reopened.push(login.token, [del('dailyTemplates', first.id)])
     const empty = await reopened.pull(login.token, 0)
     expect(empty.changes.filter((change) => change.entity === 'dailyTemplates' && !change.record.deleted)).toHaveLength(0)
-    expect(await reopened.db.entity('dailyTemplates').count()).toBe(STAGES.length)
+    expect(await reopened.db.entity('dailyTemplates').count()).toBe(STAGES.length * 2)
   })
 
   it('各家庭拥有独立的初始模板，不会读取其他家庭的模板', async () => {
@@ -179,20 +180,24 @@ describe('cloud server', () => {
     const [pulled, concurrent] = await Promise.all([server.pull(family.token, 0), server.pull(family.token, 0)])
     expect(pulled.cursor).toBe(concurrent.cursor)
     const templates = pulled.changes.filter((change) => change.entity === 'dailyTemplates')
-    expect(templates).toHaveLength(STAGES.length)
+    expect(templates).toHaveLength(STAGES.length * 2)
     expect(templates.every((change) => change.record.familyId === family.family!.id && (change.record as PlanTemplate).babyId !== baby.id)).toBe(true)
-    expect(await server.db.entity('dailyTemplates').count()).toBe(STAGES.length * 2)
+    expect(await server.db.entity('dailyTemplates').count()).toBe(STAGES.length * 4)
   })
 
   it('日模板可同步共享，家长只读，云端拒绝无效任务内容', async () => {
     const template: PlanTemplate = {
-      ...envelope(nanny), id: uid(), babyId: baby.id, name: '日常照护',
+      ...envelope(nanny), id: uid(), babyId: baby.id, kind: 'feeding', name: '日常喂养',
       tasks: [{ kind: 'feeding', category: 'milk', slot: 'day', title: '晨奶', time: '07:00', amount: 180, desc: '', steps: [], sourceId: null, order: 1 }],
     }
     expect((await server.push(nanny.token, [put('dailyTemplates', template)])).results[0].ok).toBe(true)
     expect((await server.pull(mom.token, 0)).changes.some((change) => change.entity === 'dailyTemplates' && change.record.id === template.id)).toBe(true)
     expect((await server.push(mom.token, [put('dailyTemplates', { ...template, name: '越权修改' })])).results[0]).toMatchObject({ ok: false, code: 'FORBIDDEN' })
     expect((await server.push(nanny.token, [put('dailyTemplates', { ...template, tasks: [{ ...template.tasks[0], time: '25:00' }] })])).results[0]).toMatchObject({ ok: false, code: 'INVALID' })
+    const activity = { ...template.tasks[0], kind: 'edu' as const, category: 'gross' as const, amount: null }
+    expect((await server.push(nanny.token, [put('dailyTemplates', { ...template, tasks: [activity] })])).results[0]).toMatchObject({ ok: false, code: 'INVALID' })
+    expect((await server.push(nanny.token, [put('dailyTemplates', { ...template, id: uid(), kind: 'edu' })])).results[0]).toMatchObject({ ok: false, code: 'INVALID' })
+    expect((await server.db.entity('dailyTemplates').get(template.id))?.kind).toBe('feeding')
   })
 
   it('可见性：家长看不到邀请码，消息只推给接收人', async () => {

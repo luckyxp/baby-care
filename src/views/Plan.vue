@@ -14,7 +14,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { showConfirmDialog } from 'vant'
 import { EDU_KEYS } from '@/shared/constants'
 import { can } from '@/shared/policy'
-import type { CareLog, Checkin, DateKey, EduCategory, PlanTask, Slot, TaskKind } from '@/shared/types'
+import type { CareLog, Checkin, DateKey, EduCategory, PlanTask, Slot, TaskKind, TemplateKind } from '@/shared/types'
 import { stageOf } from '@/library'
 import { matchFeeding } from '@/domain/planner'
 import { useSession } from '@/stores/session'
@@ -28,6 +28,7 @@ import {
 import { ageOf, ageText, dayjs, shiftDate } from '@/utils/time'
 import DateBar from '@/components/DateBar.vue'
 import IconBadge from '@/components/IconBadge.vue'
+import ActionMenu from '@/components/ActionMenu.vue'
 import LogSheet from '@/components/LogSheet.vue'
 import SyncStatus from '@/components/SyncStatus.vue'
 import CheckinSheet from '@/components/plan/CheckinSheet.vue'
@@ -214,8 +215,13 @@ function toLibrary(slot: Slot) {
   void router.push({ path: '/library', query: { pick: '1', date: date.value, slot } })
 }
 
-function toTemplates(fromCurrent = false) {
-  void router.push({ path: '/plan/templates', query: { date: date.value, ...(fromCurrent ? { edit: 'new', from: 'current' } : {}) } })
+const saveTemplateActions = computed(() => [
+  { text: '存为喂养模板', value: 'feeding', icon: 'milk', disabled: !groups.value.feeding.length },
+  { text: '存为早教模板', value: 'edu', icon: 'gross', disabled: !day.tasks.value.some((task) => task.kind !== 'feeding') },
+])
+
+function toTemplates(fromCurrent = false, kind: TemplateKind = 'feeding') {
+  void router.push({ path: '/plan/templates', query: { date: date.value, kind, ...(fromCurrent ? { edit: 'new', from: 'current' } : {}) } })
 }
 </script>
 
@@ -240,7 +246,7 @@ function toTemplates(fromCurrent = false) {
           <button v-if="session.isAdmin" type="button" class="link row" @click="toTemplates()"><van-icon name="description-o" /> 日模板库</button>
         </div>
         <div v-if="session.isAdmin" class="row">
-          <button v-if="editing && !empty" type="button" class="link" @click="toTemplates(true)">存为日模板</button>
+          <ActionMenu v-if="editing && !empty" label="存为模板" text="存为模板" :actions="saveTemplateActions" @select="(action) => toTemplates(true, action.value as TemplateKind)" />
           <van-button size="small" round :type="editing ? 'primary' : 'default'" @click="editing = !editing">
             {{ editing ? '完成' : '调整计划' }}
           </van-button>

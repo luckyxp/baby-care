@@ -1,5 +1,5 @@
 <!-- ==========================================================================
-  日模板库：管理完整的一天，独立编辑内容，再选择一个或多个日期应用。
+  日模板库：喂养与早教分开编辑、应用，同一天可组合使用两类模板。
   ----------------------------------------------------------------------------
   ?edit=new|<id> 打开编辑；from=current 可用当天计划起稿。
 =========================================================================== -->
@@ -7,8 +7,8 @@
 import { computed, ref, watch } from 'vue'
 import { onBeforeRouteLeave, onBeforeRouteUpdate, useRoute, useRouter } from 'vue-router'
 import { showConfirmDialog, showFailToast } from 'vant'
-import { EDU_CATEGORIES, FEED_KIND_META } from '@/shared/constants'
-import type { EduCategory, FeedKind, PlanTemplate, Slot, TemplateTask } from '@/shared/types'
+import { EDU_CATEGORIES, FEED_KIND_META, TEMPLATE_KIND_LABEL } from '@/shared/constants'
+import type { EduCategory, FeedKind, PlanTemplate, Slot, TemplateKind, TemplateTask } from '@/shared/types'
 import { normalizeTemplateTasks, type TaskInput } from '@/domain/plan-task'
 import { useSession } from '@/stores/session'
 import { useClock } from '@/composables/useClock'
@@ -18,6 +18,7 @@ import { db } from '@/db/client'
 import { applyDailyTemplate, isRecipe, removeDailyTemplate, saveDailyTemplate, type LibraryPick } from '@/services/plan'
 import { ageOf, dateKey, dayjs, shiftDate } from '@/utils/time'
 import PageNav from '@/components/PageNav.vue'
+import ChipGroup from '@/components/ChipGroup.vue'
 import AppIcon from '@/components/AppIcon.vue'
 import IconBadge from '@/components/IconBadge.vue'
 import AppSheet from '@/components/AppSheet.vue'
@@ -39,8 +40,17 @@ const referenceDate = computed(() => {
 const age = computed(() => ageOf(baby.value?.birthday ?? today.value, referenceDate.value))
 const templates = useLive(async () => (await db().dailyTemplates.where('babyId').equals(babyId.value).toArray())
   .filter((template) => !template.deleted).sort((a, b) => b.updatedAt - a.updatedAt || a.name.localeCompare(b.name, 'zh-CN', { numeric: true })), [] as PlanTemplate[], [babyId])
+const templateKind = computed<TemplateKind>({
+  get: () => route.query.kind === 'edu' ? 'edu' : 'feeding',
+  set: (kind) => { void router.replace({ query: { ...route.query, kind } }) },
+})
+const templateOptions = [
+  { value: 'feeding' as const, label: '喂养模板', symbol: 'milk' },
+  { value: 'edu' as const, label: '早教模板', symbol: 'gross' },
+]
+const allowedKinds = computed(() => templateKind.value === 'feeding' ? ['feeding'] as const : ['edu', 'interaction'] as const)
 const search = ref('')
-const filteredTemplates = computed(() => templates.value.filter((template) => template.name.includes(search.value.trim())))
+const filteredTemplates = computed(() => templates.value.filter((template) => template.kind === templateKind.value && template.name.includes(search.value.trim())))
 const expandedTemplate = ref('')
 const previewTemplate = computed(() => templates.value.find((template) => template.id === expandedTemplate.value))
 const previewShow = computed({ get: () => !!previewTemplate.value, set: (show: boolean) => { if (!show) expandedTemplate.value = '' } })
@@ -66,9 +76,10 @@ const taskIndex = ref<number | null>(null)
 const taskInput = ref<TaskInput | null>(null)
 const pickerShow = ref(false)
 const calendarShow = ref(false)
-const selectedTemplate = ref<Pick<PlanTemplate, 'babyId' | 'name' | 'tasks'> | null>(null)
+const selectedTemplate = ref<Pick<PlanTemplate, 'babyId' | 'kind' | 'name' | 'tasks'> | null>(null)
 const selectedDates = ref<Date[]>([])
 const appliedDates = ref<string[]>([])
+watch(templateKind, () => { search.value = ''; appliedDates.value = [] })
 
 const kindLabels = { feeding: '喂养', edu: '早教', interaction: '亲子互动' }
 const cloneTasks = (items: readonly TemplateTask[]) => items.map((task) => ({ ...task, steps: [...task.steps] }))
@@ -82,7 +93,7 @@ const categoryLabel = (task: TemplateTask) => task.kind === 'feeding'
  * 路由控制草稿：编辑中只改内存；保存成功后才写入模板库。
  * -------------------------------------------------------------------------- */
 let loadSequence = 0
-watch([babyId, () => route.query.edit, () => route.query.from, () => route.query.copy], async () => {
+watch([babyId, () => route.query.edit, () => route.query.from, () => route.query.copy, templateKind], async () => {
   const sequence = ++loadSequence
   if (!editing.value || !baby.value) return
   loading.value = true
@@ -94,21 +105,22 @@ watch([babyId, () => route.query.edit, () => route.query.from, () => route.query
     if (typeof id === 'string') {
       const stored = await db().dailyTemplates.get(id)
       if (sequence !== loadSequence) return
-      if (!stored || stored.deleted || stored.babyId !== babyId.value) throw new Error('日模板不存在')
+      if (!stored || stored.deleted || stored.babyId !== babyId.value || stored.kind !== templateKind.value) throw new Error('当前分类中不存在这份模板')
       templateId.value = route.query.edit === 'new' ? undefined : stored.id
       name.value = `${stored.name}${templateId.value ? '' : ' 副本'}`
       tasks.value = cloneTasks(stored.tasks)
     } else if (route.query.from === 'current') {
       const current = await db().tasks.where('[babyId+date]').equals([babyId.value, referenceDate.value]).toArray()
       if (sequence !== loadSequence) return
-      name.value = `${dayjs(referenceDate.value).format('M月D日')}照护安排`
-      tasks.value = current.length ? normalizeTemplateTasks(current.sort((a, b) => a.order - b.order)) : []
+      name.value = `${dayjs(referenceDate.value).format('M月D日')}${templateKind.value === 'feeding' ? '喂养安排' : '早教安排'}`
+      const scoped = current.filter((task) => (task.kind === 'feeding') === (templateKind.value === 'feeding'))
+      tasks.value = scoped.length ? normalizeTemplateTasks(scoped.sort((a, b) => a.order - b.order), templateKind.value) : []
     }
     savedContent.value = content.value
   } catch (error) {
     showFailToast(error instanceof Error ? error.message : '日模板加载失败')
     savedContent.value = content.value
-    await router.replace({ path: '/plan/templates', query: { date: referenceDate.value } })
+    await router.replace({ path: '/plan/templates', query: { date: referenceDate.value, kind: templateKind.value } })
   } finally {
     if (sequence === loadSequence) loading.value = false
   }
@@ -119,7 +131,7 @@ onBeforeRouteLeave(confirmLeave)
 onBeforeRouteUpdate(confirmLeave)
 
 function openEditor(id = 'new', from?: string, copy?: string) {
-  void router.push({ path: '/plan/templates', query: { date: referenceDate.value, edit: id, from, copy } })
+  void router.push({ path: '/plan/templates', query: { date: referenceDate.value, kind: templateKind.value, edit: id, from, copy } })
 }
 
 function editTask(index: number | null) {
@@ -160,10 +172,10 @@ function pickMaterial(item: LibraryPick, slot: Slot) {
 
 async function save() {
   if (!baby.value) return
-  const saved = await run(() => saveDailyTemplate(baby.value!, name.value, tasks.value, templateId.value), '日模板已保存')
+  const saved = await run(() => saveDailyTemplate(baby.value!, { kind: templateKind.value, name: name.value, tasks: tasks.value }, templateId.value), '日模板已保存')
   if (saved) {
     savedContent.value = content.value
-    await router.replace({ path: '/plan/templates', query: { date: referenceDate.value } })
+    await router.replace({ path: '/plan/templates', query: { date: referenceDate.value, kind: templateKind.value } })
   }
 }
 
@@ -190,7 +202,7 @@ function selectDraftAction(index: number, action: { value: string }) {
 /* ----------------------------------------------------------------------------
  * 应用快照：先多选具体日期，再确认替换未完成安排；不用星期推导目标日期。
  * -------------------------------------------------------------------------- */
-function openApply(template: Pick<PlanTemplate, 'babyId' | 'name' | 'tasks'>) {
+function openApply(template: Pick<PlanTemplate, 'babyId' | 'kind' | 'name' | 'tasks'>) {
   selectedTemplate.value = { ...template, tasks: cloneTasks(template.tasks) }
   selectedDates.value = [dayjs(referenceDate.value < today.value ? today.value : referenceDate.value).toDate()]
   calendarShow.value = true
@@ -204,7 +216,7 @@ async function apply(value: Date | Date[]) {
   const dateText = dates.slice(0, 6).map((date) => dayjs(date).format('M月D日')).join('、')
   const confirmed = await showConfirmDialog({
     title: `将「${template.name}」应用到 ${dates.length} 天`,
-    message: `${dateText}${dates.length > 6 ? '等日期' : ''}\n\n将替换这些日期的未完成安排。已完成任务、打卡和护理日志保留；其他日期不受影响。`,
+    message: `${dateText}${dates.length > 6 ? '等日期' : ''}\n\n${template.kind === 'feeding' ? '仅替换未完成的喂养安排，早教与亲子不变。' : '仅替换未完成的早教与亲子安排，喂养不变。'}已完成任务与护理记录保留。`,
     confirmButtonText: '确认应用',
   }).then(() => true).catch(() => false)
   if (!confirmed) return
@@ -215,24 +227,25 @@ async function apply(value: Date | Date[]) {
 
 <template>
   <div class="page templates-page" :class="{ 'templates-page--editing': editing }">
-    <PageNav :title="editing ? (templateId ? '编辑模板' : '新建模板') : '我的模板'">
+    <PageNav :title="editing ? `${templateId ? '编辑' : '新建'}${TEMPLATE_KIND_LABEL[templateKind]}` : '我的模板'">
       <template #right>
         <button v-if="!editing" type="button" class="nav-action" @click="openEditor()"><AppIcon name="plus" :size="19" />新建</button>
         <button v-else type="button" class="nav-action nav-action--primary" :disabled="!name.trim() || !tasks.length || busy || loading" @click="save"><van-loading v-if="busy" size="16" /><span v-else>保存</span></button>
       </template>
     </PageNav>
     <main v-if="!editing" class="template-body page-body">
+      <ChipGroup v-model="templateKind" :options="templateOptions" segmented class="template-kind-tabs" />
       <section v-if="appliedDates.length" class="applied-card">
         <strong><AppIcon name="check" :size="16" /> 已安排 {{ appliedDates.length }} 天</strong>
         <div class="date-links"><router-link v-for="date in appliedDates" :key="date" :to="{ path: '/plan', query: { date } }">{{ dayjs(date).format('M月D日') }} <AppIcon name="right" :size="12" /></router-link></div>
       </section>
-      <van-search v-if="templates.length" v-model="search" placeholder="搜索我的模板" background="transparent" />
-      <div v-if="templates.length" class="library-caption">{{ search ? `找到 ${filteredTemplates.length} 个模板` : `${templates.length} 个日模板` }}</div>
+      <van-search v-if="templates.some((template) => template.kind === templateKind)" v-model="search" :placeholder="`搜索${TEMPLATE_KIND_LABEL[templateKind]}`" background="transparent" />
+      <div v-if="filteredTemplates.length" class="library-caption">{{ filteredTemplates.length }} 个{{ TEMPLATE_KIND_LABEL[templateKind] }}</div>
       <section v-if="filteredTemplates.length" class="template-list" aria-label="日模板">
         <article v-for="template in filteredTemplates" :key="template.id" class="template-entry">
           <div class="template-row">
             <button class="template-main" type="button" :aria-label="`查看${template.name}`" @click="expandedTemplate = template.id">
-              <IconBadge class="template-icon" name="template" />
+              <IconBadge class="template-icon" :name="template.kind === 'feeding' ? 'milk' : 'gross'" :tone="template.kind" />
               <span class="grow"><h2>{{ template.name }}</h2><span class="template-summary">{{ summary(template.tasks) }}</span></span>
             </button>
             <button type="button" class="apply-button" :disabled="busy" :aria-label="`应用${template.name}`" @click="openApply(template)"><span>应用</span></button>
@@ -272,15 +285,16 @@ async function apply(value: Date | Date[]) {
       </template>
       <template #footer><div v-if="previewTemplate" class="preview-actions"><van-button @click="openEditor(previewTemplate.id); previewShow = false">编辑模板</van-button><van-button type="primary" @click="openApply(previewTemplate!); previewShow = false">应用到日期</van-button></div></template>
     </AppSheet>
-    <TaskFormSheet v-model:show="taskShow" :task="taskInput" :title="taskIndex === null ? '添加任务' : '编辑任务'" @save="saveTask" />
-    <TemplateMaterialPicker v-model:show="pickerShow" :months="age.monthsFloat" :added-ids="tasks.flatMap((task) => task.sourceId ? [task.sourceId] : [])" @pick="pickMaterial" />
+    <TaskFormSheet v-model:show="taskShow" :task="taskInput" :allowed-kinds="allowedKinds" :defaults="{ kind: templateKind, slot: 'day' }" :title="taskIndex === null ? '添加任务' : '编辑任务'" @save="saveTask" />
+    <TemplateMaterialPicker v-model:show="pickerShow" :kind="templateKind" :months="age.monthsFloat" :added-ids="tasks.flatMap((task) => task.sourceId ? [task.sourceId] : [])" @pick="pickMaterial" />
     <van-calendar v-model:show="calendarShow" type="multiple" switch-mode="year-month" title="选择应用日期" :default-date="selectedDates" :min-date="dayjs(today).toDate()" :max-date="dayjs(shiftDate(today, 365)).toDate()" first-day-of-week="1" confirm-text="应用到所选日期" teleport="body" @confirm="apply" />
   </div>
 </template>
 
 <style scoped>
 .templates-page { background: var(--bc-surface); }
-.template-body { padding-top: 12px; }
+.template-body { padding-top: 16px; }
+.template-kind-tabs { margin-bottom: 8px; }
 .template-body :deep(.van-search) { padding-bottom: 12px; }
 .library-caption { font-size: 12px; color: var(--bc-text-3); padding: 4px 0 8px; }
 .template-list { margin-inline: -20px; }

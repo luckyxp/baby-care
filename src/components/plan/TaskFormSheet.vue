@@ -15,6 +15,7 @@ import AppSheet from '@/components/AppSheet.vue'
 const props = defineProps<{
   task: TaskInput | null
   lockKind?: boolean
+  allowedKinds?: readonly TaskKind[]
   title?: string
   saving?: boolean
   defaults?: { kind: TaskKind; slot: Slot }
@@ -38,6 +39,7 @@ const KIND_OPTIONS: { value: TaskKind; label: string; symbol: string }[] = [
   { value: 'edu', label: '早教', symbol: 'gross' },
   { value: 'interaction', label: '亲子互动', symbol: 'social' },
 ]
+const kindOptions = computed(() => KIND_OPTIONS.filter((option) => !props.allowedKinds || props.allowedKinds.includes(option.value)))
 const feedOptions = (Object.keys(FEED_KIND_META) as FeedKind[]).map((k) => ({ value: k, label: FEED_KIND_META[k].label, symbol: k }))
 const eduOptions = EDU_KEYS.map((k) => ({ value: k, label: EDU_CATEGORIES[k].label, symbol: k }))
 const slotOptions = (['day', 'evening'] as Slot[]).map((s) => ({ value: s, label: SLOT_LABEL[s] }))
@@ -54,7 +56,7 @@ watch(show, (v) => {
     Object.assign(form, { kind: t.kind, category: t.category, slot: t.slot, title: t.title, desc: t.desc, steps: [...t.steps], time: t.time, amount: t.amount })
     return
   }
-  const kind = props.defaults?.kind ?? 'edu'
+  const kind = props.defaults?.kind ?? props.allowedKinds?.[0] ?? 'edu'
   Object.assign(form, {
     kind, category: kind === 'feeding' ? 'milk' : 'gross', slot: props.defaults?.slot ?? 'day',
     title: '', desc: '', steps: [], time: kind === 'feeding' ? '12:00' : null, amount: kind === 'feeding' ? 120 : null,
@@ -68,6 +70,10 @@ function onKind(k: TaskKind) {
 }
 
 async function save() {
+  if (props.allowedKinds && !props.allowedKinds.includes(form.kind)) {
+    await run(() => Promise.reject(new Error('任务类型与当前模板不符')))
+    return
+  }
   if (!form.title.trim()) {
     await run(() => Promise.reject(new Error('请填写任务名称')))
     return
@@ -82,8 +88,8 @@ async function save() {
 
 <template>
   <AppSheet v-model:show="show" :title="title ?? (task ? '编辑任务' : '添加任务')" :confirm-text="task ? '保存' : '添加'" :busy="busy || saving" :disabled="!form.title.trim()" @confirm="save">
-    <section v-if="!lockKind" class="form-section">
-      <ChipGroup v-model="form.kind" :options="KIND_OPTIONS" segmented @update:model-value="(k) => onKind(k as TaskKind)" />
+    <section v-if="!lockKind && kindOptions.length > 1" class="form-section">
+      <ChipGroup v-model="form.kind" :options="kindOptions" segmented @update:model-value="(k) => onKind(k as TaskKind)" />
     </section>
     <section class="form-section">
       <label class="form-label" for="task-title">名称</label>

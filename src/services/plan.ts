@@ -68,19 +68,22 @@ export function ensurePlan(baby: Baby, date: DateKey): Promise<void> {
 }
 
 /* ----------------------------------------------------------------------------
- * 日模板：一次保存完整的一天；应用后各日期拥有独立任务，后续编辑互不影响。
+ * 分类日模板：喂养与早教独立管理、独立应用，各日期保留任务快照。
  * -------------------------------------------------------------------------- */
 
-export async function saveDailyTemplate(baby: Baby, name: string, tasks: PlanTemplate['tasks'], id?: string): Promise<PlanTemplate> {
-  const title = name.trim()
-  if (!title) throw new ApiError('INVALID', '请填写日模板名称')
-  const normalized = normalizeTemplateTasks(tasks)
+export async function saveDailyTemplate(
+  baby: Baby, input: Pick<PlanTemplate, 'kind' | 'name' | 'tasks'>, id?: string,
+): Promise<PlanTemplate> {
+  const name = input.name.trim()
+  if (!name) throw new ApiError('INVALID', '请填写模板名称')
+  const tasks = normalizeTemplateTasks(input.tasks, input.kind)
   if (id) {
     const previous = await db().dailyTemplates.get(id)
     if (!previous || previous.deleted || previous.babyId !== baby.id) throw new ApiError('NOT_FOUND', '日模板不存在')
-    return update('dailyTemplates', { id, name: title, tasks: normalized })
+    if (previous.kind !== input.kind) throw new ApiError('INVALID', '不能修改模板类型，请在对应分类中新建模板')
+    return update('dailyTemplates', { id, name, tasks })
   }
-  return create('dailyTemplates', { babyId: baby.id, name: title, tasks: normalized })
+  return create('dailyTemplates', { babyId: baby.id, kind: input.kind, name, tasks })
 }
 
 export async function removeDailyTemplate(baby: Baby, id: string): Promise<void> {
@@ -89,9 +92,9 @@ export async function removeDailyTemplate(baby: Baby, id: string): Promise<void>
   await remove('dailyTemplates', id)
 }
 
-/** 整批日期原子应用，只替换未完成任务；已打卡、已关联日志的任务保持原样。 */
+/** 整批日期原子应用，仅替换同类未完成任务；另一类及已完成任务保持原样。 */
 export async function applyDailyTemplate(
-  baby: Baby, dates: DateKey[], template: Pick<PlanTemplate, 'babyId' | 'name' | 'tasks'>,
+  baby: Baby, dates: DateKey[], template: Pick<PlanTemplate, 'babyId' | 'kind' | 'name' | 'tasks'>,
 ): Promise<number> {
   if (template.babyId !== baby.id) throw new ApiError('INVALID', '请选择当前宝宝的日模板')
   const targets = [...new Set(dates)].sort()
@@ -99,7 +102,7 @@ export async function applyDailyTemplate(
   if (targets.some((date) => !/^\d{4}-\d{2}-\d{2}$/.test(date) || dayjs(date).format('YYYY-MM-DD') !== date || date < todayKey() || date < baby.birthday)) {
     throw new ApiError('INVALID', '请选择今天或之后的有效日期')
   }
-  const entries = normalizeTemplateTasks(template.tasks)
+  const entries = normalizeTemplateTasks(template.tasks, template.kind)
   const signature = (task: PlanTask | PlanTemplate['tasks'][number]) => JSON.stringify([
     task.kind, task.category, task.slot, task.time, task.sourceId, task.title,
   ])
@@ -115,12 +118,13 @@ export async function applyDailyTemplate(
         ...logs.flatMap((log) => log.taskId ? [log.taskId] : []),
         ...matchFeeding(tasks, logs).keys(),
       ])
+      const scoped = tasks.filter((task) => (task.kind === 'feeding') === (template.kind === 'feeding'))
       const retained = new Map<string, number>()
-      tasks.filter((task) => completed.has(task.id)).forEach((task) => {
+      scoped.filter((task) => completed.has(task.id)).forEach((task) => {
         const key = signature(task)
         retained.set(key, (retained.get(key) ?? 0) + 1)
       })
-      await removeMany('tasks', tasks.filter((task) => !completed.has(task.id)).map((task) => task.id))
+      await removeMany('tasks', scoped.filter((task) => !completed.has(task.id)).map((task) => task.id))
 
       const stage = stageOf(ageOf(baby.birthday, target).monthsFloat)
       const plan = { babyId: baby.id, date: target, stageKey: stage.key, focus: stage.focus }

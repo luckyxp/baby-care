@@ -6,7 +6,7 @@
 
 import { EDU_KEYS } from '@/shared/constants'
 import { ApiError } from '@/shared/errors'
-import type { PlanTask, TemplateTask } from '@/shared/types'
+import type { PlanTask, TemplateKind, TemplateTask } from '@/shared/types'
 
 export type TaskInput = Pick<PlanTask, 'kind' | 'category' | 'slot' | 'title' | 'desc' | 'steps' | 'time' | 'amount'>
 
@@ -38,10 +38,14 @@ export function normalizeTaskInput(input: TaskInput): TaskInput & Pick<PlanTask,
   }
 }
 
-export function normalizeTemplateTasks(tasks: readonly TemplateTask[]): TemplateTask[] {
+export function normalizeTemplateTasks(tasks: readonly TemplateTask[], kind: TemplateKind): TemplateTask[] {
+  if (!['feeding', 'edu'].includes(kind)) throw new ApiError('INVALID', '请选择喂养模板或早教模板')
   if (!Array.isArray(tasks) || !tasks.length) throw new ApiError('INVALID', '请至少添加一项日模板任务')
   return tasks.map((task, index) => {
     if (!task) throw new ApiError('INVALID', '请使用日模板任务结构')
+    if ((kind === 'feeding') !== (task.kind === 'feeding')) {
+      throw new ApiError('INVALID', kind === 'feeding' ? '喂养模板只能包含喂养任务' : '早教模板只能包含早教和亲子任务')
+    }
     const { assignee: _assignee, ...input } = normalizeTaskInput(task)
     return { ...input, sourceId: typeof task.sourceId === 'string' ? task.sourceId : null, order: index + 1 }
   })

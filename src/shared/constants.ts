@@ -7,7 +7,7 @@
 
 import type {
   Accept, BreastSide, DiaperKind, EduCategory, FeedKind, LogType, MilkMode,
-  Rating, Relation, SleepQuality, Slot, StoolVolume, TempMethod,
+  Rating, Relation, SleepQuality, Slot, StoolVolume, TempMethod, TemplateKind,
 } from './types'
 
 /* ── 身份 ───────────────────────────────────────────────────────────────── */
@@ -174,3 +174,7 @@ export const PERFORMANCE_TAGS = ['专注', '开心', '主动尝试', '有进步'
 export function memberLabel(m: { relation: Relation; nickname: string }): string {
   return m.relation === 'nanny' ? m.nickname || RELATION_LABEL.nanny : RELATION_LABEL[m.relation]
 }
+
+/* ── 日模板分类 ─────────────────────────────────────────────────────────── */
+
+export const TEMPLATE_KIND_LABEL: Record<TemplateKind, string> = { feeding: '喂养模板', edu: '早教模板' }

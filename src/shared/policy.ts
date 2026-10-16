@@ -70,6 +70,7 @@ export const POLICY: { [K in EntityName]: Rule<EntityMap[K]> } = {
 export const MUTABLE_FIELDS: Partial<Record<EntityName, readonly string[]>> = {
   members: ['nickname', 'avatar'],
   notices: ['readAt'],
+  dailyTemplates: ['name', 'tasks'],
 }
 
 /** 可见性：未列出的实体对全体家庭成员可见 */

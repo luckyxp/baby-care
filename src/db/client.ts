@@ -14,6 +14,7 @@ import type {
   Baby, CareLog, Checkin, EntityMap, EntityName, Invite, Member, Mutation, Note, Notice, Plan, PlanTask, PlanTemplate, Report,
 } from '@/shared/types'
 import { ENTITY_NAMES } from '@/shared/types'
+import { splitDailyTemplates } from './template-upgrade'
 
 export interface OutboxRow extends Mutation {
   seqNo?: number
@@ -60,6 +61,8 @@ export class ClientDB extends Dexie {
       // 移除已废弃的周模板写入队列，避免它们在新模型下再次上传。
       await transaction.table('outbox').filter((row) => row.entity === 'templates').delete()
     })
+    this.version(4).stores({ dailyTemplates: 'id, babyId, [babyId+kind]' })
+      .upgrade((transaction) => splitDailyTemplates(transaction, 'client'))
   }
 
   entity<K extends EntityName>(name: K): Table<EntityMap[K], string> {

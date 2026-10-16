@@ -5,14 +5,14 @@
 import { computed, ref, watch } from 'vue'
 import { showConfirmDialog } from 'vant'
 import { EDU_CATEGORIES, EDU_KEYS } from '@/shared/constants'
-import type { EduCategory, Slot } from '@/shared/types'
+import type { EduCategory, Slot, TemplateKind } from '@/shared/types'
 import { EDU_ACTIVITIES, INTERACTIONS, RECIPES, inRange } from '@/library'
 import { isRecipe, type LibraryPick } from '@/services/plan'
 import ChipGroup from '@/components/ChipGroup.vue'
 import AppSheet from '@/components/AppSheet.vue'
 import LibraryCard from './LibraryCard.vue'
 
-const props = defineProps<{ months: number; addedIds: string[] }>()
+const props = defineProps<{ months: number; addedIds: string[]; kind: TemplateKind }>()
 const show = defineModel<boolean>('show', { required: true })
 const emit = defineEmits<{ pick: [item: LibraryPick, slot: Slot] }>()
 const tab = ref('edu')
@@ -25,14 +25,14 @@ const categoryOptions = [{ value: 'all', label: '全部领域' }, ...EDU_KEYS.ma
 const slotOptions = [{ value: 'day', label: '日间' }, { value: 'evening', label: '晚间' }]
 const added = computed(() => new Set(props.addedIds))
 const items = computed(() => {
-  const pool: LibraryPick[] = tab.value === 'feeding' ? RECIPES : tab.value === 'interaction' ? INTERACTIONS : EDU_ACTIVITIES
+  const pool: LibraryPick[] = props.kind === 'feeding' ? RECIPES : tab.value === 'interaction' ? INTERACTIONS : EDU_ACTIVITIES
   return pool.filter((item) => (allAges.value || (isRecipe(item) ? item.min <= props.months : inRange(item, props.months)))
     && (isRecipe(item) || category.value === 'all' || item.category === category.value)
     && (isRecipe(item) ? `${item.name} ${item.ingredients.join(' ')}` : `${item.title} ${item.goal}`).includes(search.value.trim()))
 })
 
 watch(show, (visible) => {
-  if (visible) { search.value = ''; category.value = 'all'; slot.value = 'day' }
+  if (visible) { search.value = ''; category.value = 'all'; slot.value = 'day'; tab.value = props.kind === 'feeding' ? 'feeding' : 'edu' }
 })
 
 async function pick(item: LibraryPick) {
@@ -54,10 +54,10 @@ async function pick(item: LibraryPick) {
 </script>
 
 <template>
-  <AppSheet v-model:show="show" title="素材库" tall>
+  <AppSheet v-model:show="show" :title="kind === 'feeding' ? '辅食食谱' : '早教素材'" tall>
     <div class="picker-controls">
-      <van-search v-model="search" placeholder="搜索游戏、互动或食谱" />
-      <van-tabs v-model:active="tab"><van-tab name="edu" title="早教" /><van-tab name="interaction" title="亲子互动" /><van-tab name="feeding" title="辅食食谱" /></van-tabs>
+      <van-search v-model="search" :placeholder="kind === 'feeding' ? '搜索食材或食谱' : '搜索早教或亲子互动'" />
+      <van-tabs v-if="kind === 'edu'" v-model:active="tab"><van-tab name="edu" title="早教" /><van-tab name="interaction" title="亲子互动" /></van-tabs>
       <div class="picker-filter-row">
         <ChipGroup v-if="tab !== 'feeding'" v-model="slot" :options="slotOptions" segmented />
         <span v-else class="muted">{{ items.length }} 道食谱</span>
