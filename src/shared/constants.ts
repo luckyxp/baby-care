@@ -141,7 +141,7 @@ export const EDU_CATEGORIES: Record<EduCategory, CategoryMeta> = {
   fine:     { label: '精细动作', icon: '✋', color: '#F5A623', desc: '抓握、传递、捏取、手眼协调' },
   sensory:  { label: '感官认知', icon: '👀', color: '#3FA9E8', desc: '视听触觉、物体恒存、分类配对' },
   language: { label: '语言启蒙', icon: '🗣️', color: '#8E7CF3', desc: '发音、理解、表达、亲子阅读' },
-  social:   { label: '亲子社交', icon: '🤗', color: '#F76DAA', desc: '依恋、情绪、模仿、互动规则' },
+  social:   { label: '社交',     icon: '🤗', color: '#F76DAA', desc: '依恋、情绪、模仿、互动规则' },
 }
 
 export const EDU_KEYS = Object.keys(EDU_CATEGORIES) as EduCategory[]
