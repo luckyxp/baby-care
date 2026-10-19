@@ -11,6 +11,8 @@
 
 import type { Food, Recipe } from './types'
 import { EXTRA_FOODS, EXTRA_RECIPES } from './expanded'
+import { CATALOG_FOODS } from './catalog/foods'
+import { CATALOG_RECIPES } from './catalog/recipes'
 
 /* ── 食材 ───────────────────────────────────────────────────────────────── */
 
@@ -95,6 +97,7 @@ export const FOODS: Food[] = [
   { name: '奶酪', min: 8, group: 'dairy', allergen: true, tip: '选低钠婴幼儿奶酪，切小块或刨丝' },
   { name: '鲜牛奶', min: 12, group: 'dairy', allergen: true, tip: '1岁后才可作为日常饮品，1岁前不宜替代母乳或配方奶' },
   ...EXTRA_FOODS,
+  ...CATALOG_FOODS,
 ]
 
 /* ── 食谱 ───────────────────────────────────────────────────────────────── */
@@ -348,6 +351,7 @@ export const RECIPES: Recipe[] = [
     tip: '可以让宝宝参与卷饼，锻炼动手能力和进食兴趣', allergens: ['小麦'],
   },
   ...EXTRA_RECIPES,
+  ...CATALOG_RECIPES,
 ]
 
 /* ── 喂养原则 ───────────────────────────────────────────────────────────── */

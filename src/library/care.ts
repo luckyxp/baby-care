@@ -5,6 +5,8 @@
  *  由儿保或医生判断。
  * ========================================================================== */
 
+import { CATALOG_CARE_GUIDES } from './catalog/care'
+
 export interface CareGuide {
   id: string
   min: number
@@ -36,4 +38,5 @@ export const CARE_GUIDES: CareGuide[] = [
   { id: 'care-fever-record', min: 0, max: 36, category: 'care', title: '不舒服时怎样记录', summary: '准确记录比主观判断更有助于专业沟通。', points: ['记录体温数值、测量部位、时间，以及饮食、尿量和精神状态', '记录新出现的皮疹、呕吐、腹泻或用药名称和剂量', '呼吸困难、意识异常、持续抽搐等紧急表现应立即寻求医疗帮助'] },
   { id: 'care-home-firstaid', min: 6, max: 36, category: 'safety', title: '家庭急救物品收纳', summary: '急救物品要完整、可拿到，但药品必须锁好。', points: ['体温计、生理盐水、纱布等日常用品放在成人易取处并定期检查', '所有药品、酒精和消毒用品保持原包装并上锁高置', '照护者应了解紧急联系方式和最近医疗机构路线'] },
   { id: 'care-emotion', min: 12, max: 36, category: 'care', title: '帮助孩子调节情绪', summary: '先接住情绪，再给简单边界，比讲道理更有效。', points: ['用短句描述感受，如“你很想继续玩，所以难过了”', '保持靠近和稳定语气，等情绪下降后再转移或提供选择', '不因哭闹羞辱或威胁，安全底线用一致而简短的方式执行'] },
+  ...CATALOG_CARE_GUIDES,
 ]

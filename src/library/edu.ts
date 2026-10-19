@@ -14,6 +14,7 @@
 import type { EduCategory } from '@/shared/types'
 import type { EduActivity } from './types'
 import { EXTRA_EDU } from './expanded'
+import { CATALOG_EDU } from './catalog/edu'
 
 type Draft = Omit<EduActivity, 'category'>
 
@@ -859,4 +860,5 @@ export const EDU_ACTIVITIES: EduActivity[] = [
   ...tag('language', LANGUAGE),
   ...tag('social', SOCIAL),
   ...EXTRA_EDU,
+  ...CATALOG_EDU,
 ]

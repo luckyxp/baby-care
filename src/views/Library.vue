@@ -11,7 +11,7 @@ import { showConfirmDialog } from 'vant'
 import { EDU_CATEGORIES, EDU_KEYS } from '@/shared/constants'
 import type { EduCategory, Slot } from '@/shared/types'
 import {
-  EDU_ACTIVITIES, INTERACTIONS, FOODS, RECIPES, FEEDING_PRINCIPLES,
+  CARE_GUIDES, EDU_ACTIVITIES, INTERACTIONS, FOODS, RECIPES, FEEDING_PRINCIPLES,
   careGuidesFor, eduFor, interactionsFor, recipesFor, stageOf, type CareGuide, type FoodGroup,
 } from '@/library'
 import { useSession } from '@/stores/session'
@@ -63,7 +63,7 @@ const interactionItems = computed(() => (allAges.value ? INTERACTIONS : interact
   .filter((a) => (interactionSlot.value === 'all' || a.slot === interactionSlot.value) && matches(`${a.title} ${a.goal}`)))
 const recipes = computed(() => (allAges.value ? RECIPES : recipesFor(age.value.monthsFloat))
   .filter((r) => matches(`${r.name} ${r.ingredients.join(' ')}`)))
-const careGuides = computed(() => careGuidesFor(age.value.monthsFloat)
+const careGuides = computed(() => (allAges.value ? CARE_GUIDES : careGuidesFor(age.value.monthsFloat))
   .filter((guide) => matches(`${guide.title} ${guide.summary} ${guide.points.join(' ')}`)))
 const openGuide = ref('')
 

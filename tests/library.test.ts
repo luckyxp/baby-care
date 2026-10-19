@@ -10,8 +10,8 @@
 import { describe, expect, it } from 'vitest'
 import type { EduCategory, Slot } from '@/shared/types'
 import {
-  EDU_ACTIVITIES, FEEDING_PRINCIPLES, FOODS, FOOD_NAMES, INTERACTIONS, RECIPES, STAGES,
-  eduFor, findLibraryItem, foodsFor, inRange, interactionsFor, recipesFor, stageOf,
+  CARE_GUIDES, EDU_ACTIVITIES, FEEDING_PRINCIPLES, FOODS, FOOD_NAMES, INTERACTIONS, RECIPES, STAGES,
+  careGuidesFor, eduFor, findLibraryItem, foodsFor, inRange, interactionsFor, recipesFor, stageOf,
 } from '@/library'
 import type { Stage } from '@/library'
 
@@ -92,12 +92,12 @@ describe('结构', () => {
 /* ── 早教活动 ───────────────────────────────────────────────────────────── */
 
 describe('早教活动', () => {
-  it('总数 ≥ 90，每个领域 ≥ 18，id 前缀与领域一致', () => {
-    expect(EDU_ACTIVITIES.length).toBeGreaterThanOrEqual(90)
+  it('总数 ≥ 388，每个领域 ≥ 66，id 前缀与领域一致', () => {
+    expect(EDU_ACTIVITIES.length).toBeGreaterThanOrEqual(388)
     for (const c of CATEGORIES) {
       const list = EDU_ACTIVITIES.filter((a) => a.category === c)
-      expect(list.length, c).toBeGreaterThanOrEqual(18)
-      list.forEach((a) => expect(a.id).toMatch(new RegExp(`^${PREFIX[c]}\\d{2}$`)))
+      expect(list.length, c).toBeGreaterThanOrEqual(66)
+      list.forEach((a) => expect(a.id).toMatch(new RegExp(`^${PREFIX[c]}\\d{2,}$`)))
     }
   })
 
@@ -132,11 +132,11 @@ describe('早教活动', () => {
 describe('亲子互动', () => {
   const count = (slot: Slot) => INTERACTIONS.filter((i) => i.slot === slot).length
 
-  it('总数 ≥ 28，晚间 ≥ 18，日间 ≥ 8，id 形如 iNN', () => {
-    expect(INTERACTIONS.length).toBeGreaterThanOrEqual(28)
-    expect(count('evening')).toBeGreaterThanOrEqual(18)
-    expect(count('day')).toBeGreaterThanOrEqual(8)
-    INTERACTIONS.forEach((i) => expect(i.id).toMatch(/^i\d{2}$/))
+  it('总数 ≥ 143，晚间 ≥ 78，日间 ≥ 65，id 为 i 加至少两位数字', () => {
+    expect(INTERACTIONS.length).toBeGreaterThanOrEqual(143)
+    expect(count('evening')).toBeGreaterThanOrEqual(78)
+    expect(count('day')).toBeGreaterThanOrEqual(65)
+    INTERACTIONS.forEach((i) => expect(i.id).toMatch(/^i\d{2,}$/))
   })
 
   it('每条都归属五大领域之一，且五个领域都有覆盖', () => {
@@ -155,8 +155,8 @@ describe('亲子互动', () => {
 describe('喂养素材', () => {
   const GROUPS = ['grain', 'veg', 'fruit', 'meat', 'egg', 'fish', 'bean', 'dairy']
 
-  it('食材 ≥ 50 种，分组合法', () => {
-    expect(FOODS.length).toBeGreaterThanOrEqual(50)
+  it('食材 ≥ 160 种，分组合法', () => {
+    expect(FOODS.length).toBeGreaterThanOrEqual(160)
     FOODS.forEach((f) => expect(GROUPS).toContain(f.group))
   })
 
@@ -170,8 +170,9 @@ describe('喂养素材', () => {
   })
 
   it('常见过敏原都已标记', () => {
-    const allergenic = /鸡蛋|鹌鹑蛋|鱼|虾|蟹|花生|核桃|坚果|豆腐|毛豆|大豆|面条|馒头|馄饨|酸奶|奶酪|牛奶/
+    const allergenic = /鸡蛋|鹌鹑蛋|鲜鸭蛋|鲜鹅蛋|鱼|虾|蟹(?!味菇)|花生|核桃|杏仁|腰果|榛子|坚果|豆腐|毛豆|大豆|黑豆|面条|馒头|馄饨|小麦|大麦|荞麦|意大利面|酸奶|奶酪|牛奶|凝乳|开菲尔/
     FOODS.filter((f) => allergenic.test(f.name)).forEach((f) => expect(f.allergen, f.name).toBe(true))
+    expect(FOODS.find((f) => f.name === '蟹味菇')?.allergen).toBe(false)
   })
 
   it('坚果只以粉 / 酱形式出现', () => {
@@ -179,9 +180,9 @@ describe('喂养素材', () => {
       .forEach((f) => expect(f.name, f.name).toMatch(/粉|酱/))
   })
 
-  it('食谱 ≥ 32 道，覆盖 6 → 24+ 月，id 形如 rNN', () => {
-    expect(RECIPES.length).toBeGreaterThanOrEqual(32)
-    RECIPES.forEach((r) => expect(r.id).toMatch(/^r\d{2}$/))
+  it('食谱 ≥ 256 道，覆盖 6 → 24+ 月，id 为 r 加至少两位数字', () => {
+    expect(RECIPES.length).toBeGreaterThanOrEqual(256)
+    RECIPES.forEach((r) => expect(r.id).toMatch(/^r\d{2,}$/))
     const mins = RECIPES.map((r) => r.min)
     expect(Math.min(...mins)).toBe(6)
     expect(Math.max(...mins)).toBeGreaterThanOrEqual(24)
@@ -201,6 +202,76 @@ describe('喂养素材', () => {
   it('喂养原则 8-12 条', () => {
     expect(FEEDING_PRINCIPLES.length).toBeGreaterThanOrEqual(8)
     expect(FEEDING_PRINCIPLES.length).toBeLessThanOrEqual(12)
+  })
+})
+
+/* ---- 扩充素材的完整性与安全约束 ---- */
+
+describe('扩充素材', () => {
+  it('五类素材合计超过 1000 条，每类内部名称唯一', () => {
+    expect(EDU_ACTIVITIES.length + INTERACTIONS.length + FOODS.length + RECIPES.length + CARE_GUIDES.length)
+      .toBeGreaterThanOrEqual(1000)
+    const groups = [
+      EDU_ACTIVITIES.map((a) => a.title), INTERACTIONS.map((a) => a.title),
+      FOODS.map((f) => f.name), RECIPES.map((r) => r.name), CARE_GUIDES.map((g) => g.title),
+    ]
+    groups.forEach((names) => expect(new Set(names).size).toBe(names.length))
+  })
+
+  it('全部计划素材均可用稳定 ID 反查', () => {
+    for (const item of [...EDU_ACTIVITIES, ...INTERACTIONS, ...RECIPES]) {
+      expect(findLibraryItem(item.id), item.id).toBe(item)
+    }
+  })
+
+  it('亲子素材有完整步骤、贴士和有效推荐区间', () => {
+    for (const item of INTERACTIONS) {
+      expect(item.min, item.id).toBeGreaterThanOrEqual(0)
+      expect(item.max, item.id).toBeGreaterThan(item.min)
+      expect(item.max, item.id).toBeLessThanOrEqual(36)
+      expect(item.duration, item.id).toBeGreaterThan(0)
+      expect(item.steps.length, item.id).toBeGreaterThanOrEqual(2)
+      expect(item.steps.every((step) => step.trim()), item.id).toBe(true)
+      expect(item.goal && item.tip, item.id).toBeTruthy()
+    }
+  })
+
+  it('扩充食谱完整，复合配方的过敏原与实际用料一致', () => {
+    const recipes = RECIPES.filter((r) => Number(r.id.slice(1)) >= 57)
+    for (const r of recipes) {
+      expect(r.ingredients.length, r.id).toBeGreaterThanOrEqual(3)
+      expect(r.steps.length, r.id).toBe(4)
+      expect(r.steps.every((step) => step.trim()), r.id).toBe(true)
+      expect(r.tip && r.texture, r.id).toBeTruthy()
+      const ingredients = r.ingredients.join(' ')
+      const allergens = [
+        [/鸡蛋/, '鸡蛋'], [/小麦|婴儿面条/, '小麦'], [/豆腐|黑豆/, '大豆'],
+        [/鳕鱼|三文鱼|鲈鱼|罗非鱼/, '鱼'], [/虾/, '虾'], [/酸奶|奶酪|鲜牛奶/, '牛奶'],
+        [/芝麻/, '芝麻'], [/花生/, '花生'], [/核桃/, '核桃'], [/杏仁/, '杏仁'], [/腰果/, '腰果'],
+      ] as const
+      allergens.forEach(([pattern, allergen]) => {
+        if (pattern.test(ingredients)) expect(r.allergens, r.id).toContain(allergen)
+      })
+      if (/鲜牛奶/.test(ingredients)) expect(r.min, r.id).toBeGreaterThanOrEqual(12)
+    }
+    expect(findLibraryItem('r200')).toMatchObject({ allergens: ['小麦', '鸡蛋', '虾'] })
+    expect(findLibraryItem('r231')).toMatchObject({ min: 12, meal: 'snack', allergens: ['牛奶'] })
+    expect(findLibraryItem('r256')).toMatchObject({ allergens: ['大豆'] })
+  })
+
+  it('护理知识 ≥ 80 条，ID 唯一、内容完整、月龄筛选遵循左闭右开', () => {
+    expect(CARE_GUIDES.length).toBeGreaterThanOrEqual(80)
+    expect(new Set(CARE_GUIDES.map((g) => g.id)).size).toBe(CARE_GUIDES.length)
+    expect(new Set(CARE_GUIDES.map((g) => g.category)).size).toBe(4)
+    for (const g of CARE_GUIDES) {
+      expect(g.min, g.id).toBeGreaterThanOrEqual(0)
+      expect(g.max, g.id).toBeGreaterThan(g.min)
+      expect(g.max, g.id).toBeLessThanOrEqual(36)
+      expect(g.summary && g.title, g.id).toBeTruthy()
+      expect(g.points.length, g.id).toBeGreaterThanOrEqual(3)
+      expect(careGuidesFor(g.min), g.id).toContain(g)
+      expect(careGuidesFor(g.max), g.id).not.toContain(g)
+    }
   })
 })
 
