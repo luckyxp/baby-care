@@ -58,11 +58,13 @@ const slotOptions = [
 const targetOptions = slotOptions.filter((s) => s.value !== 'all')
 const matches = (text: string) => text.toLowerCase().includes(search.value.trim().toLowerCase())
 const eduItems = computed(() => (allAges.value ? EDU_ACTIVITIES : eduFor(age.value.monthsFloat))
-  .filter((a) => (category.value === 'all' || a.category === category.value) && matches(`${a.title} ${a.goal}`)))
+  .filter((a) => (category.value === 'all' || a.category === category.value)
+    && matches([a.title, a.goal, a.observe, ...a.materials, ...a.steps].join(' '))))
 const interactionItems = computed(() => (allAges.value ? INTERACTIONS : interactionsFor(age.value.monthsFloat))
-  .filter((a) => (interactionSlot.value === 'all' || a.slot === interactionSlot.value) && matches(`${a.title} ${a.goal}`)))
+  .filter((a) => (interactionSlot.value === 'all' || a.slot === interactionSlot.value)
+    && matches([a.title, a.goal, a.tip, ...a.materials, ...a.steps].join(' '))))
 const recipes = computed(() => (allAges.value ? RECIPES : recipesFor(age.value.monthsFloat))
-  .filter((r) => matches(`${r.name} ${r.ingredients.join(' ')}`)))
+  .filter((r) => matches([r.name, r.texture, r.tip, ...r.ingredients, ...r.steps, ...r.allergens].join(' '))))
 
 const GROUP_LABEL: Record<FoodGroup, string> = {
   grain: '谷薯类', veg: '蔬菜类', fruit: '水果及其他', meat: '畜禽肉类',
@@ -117,7 +119,7 @@ async function pick(item: LibraryPick) {
       <van-tabs v-model:active="tab" shrink animated>
         <van-tab name="edu" title="早教">
           <div class="filter"><ChipGroup v-model="category" :options="categoryOptions" /></div>
-          <p class="count muted">{{ eduItems.length }} 项活动 · 点击卡片查看步骤与观察要点</p>
+          <p class="count muted">当前 {{ eduItems.length }} / 共 {{ EDU_ACTIVITIES.length }} 项活动 · 点击查看步骤与观察要点</p>
           <LibraryCard
             v-for="item in eduItems" :key="item.id" :item="item" :picking="picking"
             :loading="busy && selecting === item.id" :added="added.has(item.id)" @pick="pick"
@@ -126,7 +128,7 @@ async function pick(item: LibraryPick) {
         </van-tab>
         <van-tab name="interaction" title="亲子互动">
           <div class="filter"><ChipGroup v-model="interactionSlot" :options="slotOptions" /></div>
-          <p class="count muted">{{ interactionItems.length }} 项互动 · 陪伴比完成任务更重要</p>
+          <p class="count muted">当前 {{ interactionItems.length }} / 共 {{ INTERACTIONS.length }} 项互动 · 陪伴比完成任务更重要</p>
           <LibraryCard
             v-for="item in interactionItems" :key="item.id" :item="item" :picking="picking"
             :loading="busy && selecting === item.id" :added="added.has(item.id)" @pick="pick"
@@ -166,7 +168,7 @@ async function pick(item: LibraryPick) {
               <p v-if="!foodGroups.length" class="muted">没有匹配的食材</p>
             </template>
           </div>
-          <div class="section-title">月龄食谱 <small class="muted">{{ recipes.length }} 道</small></div>
+          <div class="section-title">月龄食谱 <small class="muted">当前 {{ recipes.length }} / 共 {{ RECIPES.length }} 道</small></div>
           <LibraryCard
             v-for="item in recipes" :key="item.id" :item="item" :picking="picking"
             :loading="busy && selecting === item.id" :added="added.has(item.id)" @pick="pick"

@@ -9,6 +9,7 @@
  * ========================================================================== */
 
 import type { Interaction } from './types'
+import { EXTRA_INTERACTIONS } from './interaction-extra'
 
 /* ── 晚间 · 留给爸爸妈妈 ────────────────────────────────────────────────── */
 
@@ -209,8 +210,8 @@ const DAY: Interaction[] = [
   },
   {
     id: 'i28', slot: 'day', category: 'social', min: 0, max: 24, title: '午睡前安抚', duration: 10,
-    materials: ['安抚巾（可选）'],
-    steps: ['午睡前拉上窗帘，降低环境刺激', '抱着宝宝轻轻拍背、哼歌', '宝宝犯困时放到床上，陪伴入睡'],
+    materials: [],
+    steps: ['午睡前降低环境刺激，准备平整坚实、无松软杂物的安全睡眠面', '清醒成人抱稳宝宝，轻轻拍背或哼歌，宝宝困倦就停止互动', '将宝宝仰卧放回睡眠面，不在睡眠区放安抚巾、玩偶或枕头'],
     goal: '帮助宝宝平稳入睡，建立规律作息',
     tip: '每天的午睡程序保持一致，宝宝更容易入睡；入睡时间记到睡眠日志',
   },
@@ -239,4 +240,4 @@ const DAY: Interaction[] = [
 
 /* ── 汇总 ───────────────────────────────────────────────────────────────── */
 
-export const INTERACTIONS: Interaction[] = [...EVENING, ...DAY]
+export const INTERACTIONS: Interaction[] = [...EVENING, ...DAY, ...EXTRA_INTERACTIONS]

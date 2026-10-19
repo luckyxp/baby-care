@@ -71,12 +71,14 @@ describe('每日计划生成', () => {
   })
 
   it('任务落库失败时计划和队列一并回滚，重试可以成功', async () => {
-    const spy = vi.spyOn(db().tasks, 'put').mockRejectedValueOnce(new Error('模拟写入失败'))
+    // -- 事务会绑定新的 Table 实例，通过共享创建钩子注入真实写入失败。 --
+    const failTaskWrite = () => { throw new Error('模拟写入失败') }
+    db().tasks.hook('creating', failTaskWrite)
     await expect(ensurePlan(baby, date)).rejects.toThrow('模拟写入失败')
     expect(await db().plans.count()).toBe(0)
     expect(await db().tasks.count()).toBe(0)
     expect(await db().outbox.count()).toBe(0)
-    spy.mockRestore()
+    db().tasks.hook('creating').unsubscribe(failTaskWrite)
     await ensurePlan(baby, date)
     expect(await db().plans.count()).toBe(1)
   })

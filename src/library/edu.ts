@@ -13,6 +13,11 @@
 
 import type { EduCategory } from '@/shared/types'
 import type { EduActivity } from './types'
+import { GROSS_ACTIVITIES } from './edu/gross'
+import { FINE_ACTIVITIES } from './edu/fine'
+import { SENSORY_ACTIVITIES } from './edu/sensory'
+import { LANGUAGE_ACTIVITIES } from './edu/language'
+import { SOCIAL_ACTIVITIES } from './edu/social'
 
 type Draft = Omit<EduActivity, 'category'>
 
@@ -52,9 +57,9 @@ const GROSS: Draft[] = [
     goal: '掌握翻身动作，锻炼躯干力量与协调', observe: '能否独立翻身、向哪一侧更熟练',
   },
   {
-    id: 'g07', min: 4, max: 7, title: '拉坐起', duration: 3, materials: [],
-    steps: ['宝宝仰卧，让宝宝握住大人的两根拇指，大人同时握住宝宝手腕', '缓慢把宝宝拉到坐姿，再慢慢放回，重复3-5次', '若头部明显后仰跟不上，就暂停，过几天再练'],
-    goal: '锻炼颈部、手臂和腹部力量', observe: '拉起时头部能否与躯干保持一致、手臂是否主动用力',
+    id: 'g07', min: 6, max: 10, title: '侧卧撑手探索起身', duration: 3, materials: ['地垫', '大软玩具'],
+    steps: ['宝宝已能稳定控制头颈时，在地垫上用玩具吸引自主侧转', '成人贴身扶护躯干，让宝宝自己尝试用下侧手掌撑地', '不拉手腕或牵手坐起，不会起身也可以继续侧卧探索，疲倦就休息'],
+    goal: '探索侧转与手掌支撑的姿势衔接', observe: '是否主动撑手、能否保持头颈稳定',
   },
   {
     id: 'g08', min: 5, max: 9, title: '靠坐与独坐', duration: 5, materials: ['哺乳枕或靠垫', '玩具'],
@@ -67,8 +72,8 @@ const GROSS: Draft[] = [
     goal: '学习向前移动身体，协调手脚配合', observe: '能否主动向前挪动、手脚是否交替用力',
   },
   {
-    id: 'g10', min: 7, max: 12, title: '手膝爬行', duration: 10, materials: ['爬行垫', '大毛巾', '玩具'],
-    steps: ['用毛巾兜住宝宝腹部轻轻提起，让双手双膝着地承重', '在前方用玩具吸引，引导左右手脚交替前进', '熟练后在垫上放枕头等软障碍，鼓励宝宝爬过去'],
+    id: 'g10', min: 7, max: 12, title: '手膝爬行', duration: 10, materials: ['爬行垫', '大玩具'],
+    steps: ['在平整防滑地垫上让清醒宝宝自主选择俯卧或手膝支撑，成人近距离看护', '在近处用玩具吸引，等待宝宝自主移动，不用毛巾兜起或拖拉肢体', '按自己的方式靠近后就让宝宝拿到玩具，疲倦立即休息'],
     goal: '手脚交替协调，促进感觉统合', observe: '腹部能否离地、手脚交替是否协调',
   },
   {
@@ -77,9 +82,9 @@ const GROSS: Draft[] = [
     goal: '增强腿部力量和平衡，练习站、蹲转换', observe: '能否自己扶站、蹲下时是否一屁股坐下',
   },
   {
-    id: 'g12', min: 7, max: 11, title: '扶腋站立蹦蹦', duration: 3, materials: [],
-    steps: ['大人坐好，双手扶住宝宝腋下，让宝宝站在大人腿上', '让宝宝自己屈膝蹬腿，大人只顺势轻托，配合儿歌节奏', '每次1-2分钟即可，不抛起、不用力上下晃动'],
-    goal: '感受下肢承重，锻炼腿部肌肉和节奏感', observe: '双腿能否主动屈伸蹬起、是否喜欢这个游戏',
+    id: 'g12', min: 9, max: 15, title: '扶稳沙发屈膝取布偶', duration: 3, materials: ['固定沙发', '大布偶'],
+    steps: ['宝宝已经能自行扶站时，把布偶放在沙发边稍低处', '成人在身侧护住，等待宝宝扶稳后自主屈膝取物', '不从腋下反复提拉或上下颠动，不会屈膝时可直接坐下玩'],
+    goal: '在自主扶站中体验屈膝和重心变化', observe: '屈膝时是否保持支撑、能否平稳坐下',
   },
   {
     id: 'g13', min: 9, max: 14, title: '扶家具横走', duration: 8, materials: ['沙发或床沿', '玩具'],
@@ -113,7 +118,7 @@ const GROSS: Draft[] = [
   },
   {
     id: 'g19', min: 20, max: 36, title: '双脚跳', duration: 8, materials: ['软垫或草地'],
-    steps: ['大人示范双脚并拢向上跳，说"小兔子跳跳跳"', '先牵着宝宝双手一起跳，再过渡到独立跳', '熟练后尝试从10cm左右的矮台阶跳下，大人在旁保护'],
+    steps: ['大人在平坦防滑地面示范双脚轻跳，说"小兔子跳跳跳"', '宝宝愿意时尝试屈膝轻跳，不拉手臂提起身体', '全程在同一平面练习，成人在旁保护，不从台阶或家具向下跳'],
     goal: '发展下肢爆发力和身体协调性', observe: '能否双脚同时离地、落地是否稳',
   },
   {
@@ -227,8 +232,8 @@ const FINE: Draft[] = [
     goal: '练习手腕旋转动作和双手协作', observe: '能否拧开或拧紧、双手是否配合',
   },
   {
-    id: 'f18', min: 24, max: 36, title: '串大珠子', duration: 10, materials: ['儿童大木珠（直径大于4cm）', '硬头粗绳'],
-    steps: ['示范一手拿珠子一手拿绳，把绳头穿进珠孔再拉出来', '让宝宝尝试串2-3颗，完成后做成"项链"', '全程看护，结束后收好珠子'],
+    id: 'f18', min: 24, max: 36, title: '串大珠子', duration: 10, materials: ['不可吞咽的适龄儿童大木珠', '成人看护使用的短粗绳'],
+    steps: ['成人检查大木珠不可吞咽，示范一手拿珠子一手拿短粗绳穿孔', '让宝宝在桌面尝试串2-3颗，绳子不打结成环、不做项链或套在身体上', '成人始终近距离看护，结束逐件清点并收好珠子和绳子'],
     goal: '提升双手协调和手眼配合', observe: '能串几颗、是否需要帮助',
   },
   {
@@ -462,9 +467,9 @@ const LANGUAGE: Draft[] = [
     goal: '发展叙述能力和想象力', observe: '能否用几句话说出简单情节',
   },
   {
-    id: 'l17', min: 12, max: 30, title: '吹一吹', duration: 5, materials: ['纸条', '羽毛', '泡泡水（大人吹）'],
-    steps: ['在宝宝面前吹动纸条或羽毛，示范鼓起嘴吹气', '让宝宝学着吹，看纸条飘起来', '大人吹泡泡让宝宝追着戳，泡泡水不入口'],
-    goal: '锻炼口腔肌肉和气息控制，为清晰发音打基础', observe: '能否吹出气流、嘴型是否正确',
+    id: 'l17', min: 12, max: 30, title: '吹一吹', duration: 5, materials: ['成人持握的宽纸条'],
+    steps: ['成人拿稳宽纸条并轻吹，描述纸条动起来了', '宝宝愿意时尝试吹，成人始终拿稳纸条并远离口鼻', '纸条不入口、不使用散羽毛；宝宝只想看时也可以，不要求固定嘴型'],
+    goal: '体验吹气与物体移动的联系，积累动作词汇', observe: '是否对纸条移动感兴趣、能否用动作或声音表达继续',
   },
   {
     id: 'l18', min: 5, max: 10, title: '双唇音游戏', duration: 5, materials: [],
@@ -498,7 +503,7 @@ const SOCIAL: Draft[] = [
   },
   {
     id: 'c02', min: 0, max: 3, title: '袋鼠式拥抱', duration: 15, materials: ['薄毯'],
-    steps: ['大人解开上衣，让只穿尿布的宝宝趴在胸前，肌肤相贴', '用薄毯盖住宝宝背部保暖，轻轻抚摸后背', '可以哼歌或说话，始终保持宝宝口鼻通畅'],
+    steps: ['完全清醒的成人坐稳或半躺，托稳宝宝头颈，让宝宝肌肤相贴趴在胸前', '需要保暖时薄毯只到背部，宝宝头脸外露，口鼻始终通畅可见', '可以轻声说话，任一方困倦时立即结束，将宝宝仰卧放回安全睡眠面'],
     goal: '稳定情绪和体温，增强安全感与亲子联结', observe: '宝宝是否放松安静、呼吸是否平稳',
   },
   {
@@ -513,7 +518,7 @@ const SOCIAL: Draft[] = [
   },
   {
     id: 'c05', min: 4, max: 18, title: '抱抱亲亲', duration: 3, materials: [],
-    steps: ['张开双臂说"抱抱"，等宝宝伸手后再抱起', '说"亲亲"并亲宝宝的脸，鼓励宝宝亲回来', '在日常中多次表达爱意'],
+    steps: ['张开双臂说"抱抱"，等宝宝伸手或靠近后再抱起', '愿意时温柔拥抱，转头或推开就停下，不要求亲吻', '也可以用挥手、说话表达爱意，尊重宝宝选择'],
     goal: '学习表达亲密情感，增强依恋关系', observe: '是否主动伸手要抱、会不会亲人',
   },
   {
@@ -582,13 +587,13 @@ const SOCIAL: Draft[] = [
     goal: '理解社会角色，发展语言和共情能力', observe: '能否用语言和动作表现角色',
   },
   {
-    id: 'c19', min: 4, max: 12, title: '膝上摇摇', duration: 5, materials: [],
-    steps: ['大人坐好，让宝宝面对面坐在腿上，双手扶稳宝宝腋下或腰部', '唱着儿歌，轻轻左右摇摆或微微颠动膝盖', '动作幅度要小，不抛起、不剧烈晃动'],
+    id: 'c19', min: 6, max: 12, title: '膝上摇摇', duration: 5, materials: [],
+    steps: ['宝宝已稳定控制头颈时成人坐稳，面对面完整扶护宝宝躯干', '轻声唱儿歌，只随节奏轻微侧倾，宝宝不稳时立即托正', '不颠动膝盖、不抛起或上下晃动；不能稳定保持头颈时改为普通抱稳聊天'],
     goal: '享受亲密互动，感受节奏与平衡', observe: '是否开心、是否期待下一轮',
   },
   {
     id: 'c20', min: 8, max: 24, title: '分离小练习', duration: 5, materials: [],
-    steps: ['离开前告诉宝宝"我去厨房，很快回来"，不偷偷溜走', '从几分钟的短暂分开开始，回来时热情拥抱', '逐渐延长离开时间，保持一致的告别方式'],
+    steps: ['先确认另一位熟悉成人会始终近距离照看宝宝，再清楚说明谁离开、谁陪伴', '从很短的日常离开开始，不偷偷溜走；宝宝明显不安时由留下的照护者及时安抚', '回来时温柔回应，宝宝愿意才拥抱；没有其他成人接手时不做分离练习'],
     goal: '缓解分离焦虑，建立信任感', observe: '分开时的情绪反应、恢复平静所需的时间',
   },
 ]
@@ -597,8 +602,13 @@ const SOCIAL: Draft[] = [
 
 export const EDU_ACTIVITIES: EduActivity[] = [
   ...tag('gross', GROSS),
+  ...GROSS_ACTIVITIES,
   ...tag('fine', FINE),
+  ...FINE_ACTIVITIES,
   ...tag('sensory', SENSORY),
+  ...SENSORY_ACTIVITIES,
   ...tag('language', LANGUAGE),
+  ...LANGUAGE_ACTIVITIES,
   ...tag('social', SOCIAL),
+  ...SOCIAL_ACTIVITIES,
 ]
